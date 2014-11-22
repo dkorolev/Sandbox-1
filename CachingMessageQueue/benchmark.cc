@@ -9,7 +9,7 @@
 //      and a non-blocking queue of limited size is used.
 //
 //   2) Thread lock time.
-//      The time for which the thread pushing events is blocked when pushing an event, mean and standard deviation.
+//      The time for which the thread pushing events is blocked when pushing an event.
 //
 // Entries pushing side is:
 //
