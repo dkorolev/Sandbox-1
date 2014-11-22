@@ -1,10 +1,10 @@
-# toy_caching_message_queue
+# CachingMessageQueue
 
 To block client threads for as short as possible: In-memory caching message queue and its benchmark.
 
 # Benchmark
 
-On my local T420s -- D.K.
+On my local ThinkPad T420s -- D.K.
 
 ```
 # Load test, mid-sized messages from several threads.
