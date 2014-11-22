@@ -161,8 +161,8 @@ class EfficientMQ final {
   //     into which the next message will be written.
   // The order of "pointers" is always tail_ <= head_ready_ <= head_allocated_.
   // The range [tail_, head_ready_) is what is ready to be extracted and sent over.
-  // The range [head_ready_, head_allocated_) is the "grey area", where the entries
-  // are already assigned indexes, but their population, done by respective client threads, is not done yet.
+  // The range [head_ready_, head_allocated_) is the "grey area", where the entries are already
+  // assigned indexes, but their population, done by respective client threads, is not done yet.
   // All three indexes are guarded by one mutex. (This can be improved, but meh. -- D.K.)
   size_t tail_ = 0;
   size_t head_ready_ = 0;
