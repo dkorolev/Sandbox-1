@@ -1,6 +1,6 @@
 BasedOnStyle: Google
 
-ColumnLimit: 117
+ColumnLimit: 112
 
 AllowAllParametersOfDeclarationOnNextLine: false
 BinPackParameters: false  # Use multiple lines for parameters.

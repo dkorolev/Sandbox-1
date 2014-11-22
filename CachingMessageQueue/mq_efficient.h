@@ -136,9 +136,9 @@ class EfficientMQ final {
   // Events beyond it will be dropped.
   const size_t circular_buffer_size_;
 
-  // The `Entry` struct keeps the entries along with the flag describing whether the message is done being populated
-  // and thus is ready to be exported. The flag is neccesary, since the message at index `i+1` might chronologically
-  // get finalized before the message at index `i` does.
+  // The `Entry` struct keeps the entries along with the flag describing whether the message is done being
+  // populated and thus is ready to be exported. The flag is neccesary, since the message at index `i+1` might
+  // chronologically get finalized before the message at index `i` does.
   struct Entry {
     T_MESSAGE_TYPE message_body;
     bool finalized;
@@ -153,14 +153,16 @@ class EfficientMQ final {
   // The thread in which the consuming process is running.
   std::thread consumer_thread_;
 
-  // To minimize the time for which the message emitting thread is blocked for, the buffer uses three "pointers":
+  // To minimize the time for which the message emitting thread is blocked for,
+  // the buffer uses three "pointers":
   // 1) `tail_`: The index of the next element to be exported and removed from the buffer.
   // 2) `head_ready_`: The successor of the index of the element that is the last finalized element.
-  // 3) `head_allocated_`: The index of the first unallocated element, into which the next message will be written.
+  // 3) `head_allocated_`: The index of the first unallocated element,
+  //     into which the next message will be written.
   // The order of "pointers" is always tail_ <= head_ready_ <= head_allocated_.
   // The range [tail_, head_ready_) is what is ready to be extracted and sent over.
-  // The range [head_ready_, head_allocated_) is the "grey area", where the entries are already assigned indexes,
-  // but their population, done by respective client threads, is not done yet.
+  // The range [head_ready_, head_allocated_) is the "grey area", where the entries
+  // are already assigned indexes, but their population, done by respective client threads, is not done yet.
   // All three indexes are guarded by one mutex. (This can be improved, but meh. -- D.K.)
   size_t tail_ = 0;
   size_t head_ready_ = 0;

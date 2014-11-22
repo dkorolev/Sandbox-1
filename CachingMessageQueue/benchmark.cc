@@ -50,7 +50,8 @@ for q in DummyMQ SimpleMQ EfficientMQ ; do \
   --process_mbps=100 ; \
 done
 
-# Consumer slow relative to producers, observe produce speed adjusted to the consumer rate and/or messages dropped.
+# Consumer slow relative to producers.
+# Observe produce speed adjusted to the consumer rate and/or messages dropped.
 # Need more time and smaller packets, otherwith most of them end up in the circular buffer of EfficientMQ.
 for q in DummyMQ SimpleMQ EfficientMQ ; do \
   ./build/benchmark \
@@ -91,7 +92,9 @@ DEFINE_int32(average_message_length,
              2048,
              "The average size of the message, assuming --min_message size and exponential distribution.");
 
-DEFINE_double(process_mbps, 50.0, "The rate, in MBPS, at which the events are processed by the (fake) consumer.");
+DEFINE_double(process_mbps,
+              50.0,
+              "The rate, in MBPS, at which the events are processed by the (fake) consumer.");
 
 DEFINE_double(seconds, 3.0, "The time to run the benchmark for, in seconds.");
 
@@ -104,11 +107,11 @@ double wall_time_ns() {
                                  std::chrono::system_clock::now().time_since_epoch()).count());
 }
 
-// The producer pushes the messages, of messages averaging --average_message_length bytes, at the rate averaging
-// --push_mbps.
+// The producer pushes the messages, of messages averaging --average_message_length bytes,
+// at the rate averaging --push_mbps.
 // The producing speed is stateful, an error is auto-corrected on sending the future events.
 //
-// In other words, the producer will keep trying to send more and more events, even if the rate at which the queue
+// In other words, the producer will keep trying to send more events, even if the rate at which the queue
 // can accept those is less than the rate at which this producer should be producing events.
 //
 // This is the essence of the benchmark: with high push rate and low processing date,
@@ -157,7 +160,8 @@ struct Producer {
         }
       }
 
-      const size_t message_length_in_b = static_cast<size_t>(d_message_length_(rng_) + min_message_length_ + 0.5);
+      const size_t message_length_in_b =
+          static_cast<size_t>(d_message_length_(rng_) + min_message_length_ + 0.5);
       const double message_length_in_mb = 1e-6 * message_length_in_b;
       const double rate_in_mbps = d_rate_in_mbps_(rng_);
       const double send_time_in_ns = 1e9 * message_length_in_mb / rate_in_mbps;
@@ -280,7 +284,8 @@ void RunBenchmark(const std::string& queue_name) {
 
     std::vector<std::thread> threads(number_of_threads);
     for (size_t i = 0; i < number_of_threads; ++i) {
-      threads[i] = std::thread(&Producer<T_MESSAGE_QUEUE>::RunProducingThread, producers[i].get(), std::ref(done));
+      threads[i] =
+          std::thread(&Producer<T_MESSAGE_QUEUE>::RunProducingThread, producers[i].get(), std::ref(done));
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<uint64_t>(1e3 * benchmark_seconds)));
@@ -317,7 +322,8 @@ void RunBenchmark(const std::string& queue_name) {
     B2 = consumer.total_bytes_processed_;
 
     printf("Total messages pushed:  %14d (%.3lf GB, %.3lf MB/s)\n", N, 1e-9 * B, 1e-6 * B / benchmark_seconds);
-    printf("Total messages parsed:  %14d (%.3lf GB, %.3lf MB/s)\n", N2, 1e-9 * B2, 1e-6 * B2 / benchmark_seconds);
+    printf(
+        "Total messages parsed:  %14d (%.3lf GB, %.3lf MB/s)\n", N2, 1e-9 * B2, 1e-6 * B2 / benchmark_seconds);
     printf("Total messages dropped: %14d (%.2lf%%)\n", M, 100.0 * M / N);
 
     printf("Push time >= 1ms:   %18d (%.2lf%%)\n", C1ms, 100.0 * C1ms / N);
