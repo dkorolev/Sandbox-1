@@ -1,5 +1,5 @@
-#ifndef MQ_DUMMY_H
-#define MQ_DUMMY_H
+#ifndef SANDBOX_MQ_DUMMY_H
+#define SANDBOX_MQ_DUMMY_H
 
 // DummyMQ blocks message sending thread until the message is processed.
 // Used by the benchmark as an example of the queue that blocks the thread for as long as possible,
@@ -8,28 +8,28 @@
 #include <string>
 #include <mutex>
 
-template <typename CONSUMER_TYPE, typename MESSAGE_TYPE = std::string>
+template <typename CONSUMER, typename MESSAGE = std::string>
 class DummyMQ final {
  public:
-  typedef MESSAGE_TYPE T_MESSAGE_TYPE;
-  typedef CONSUMER_TYPE T_CONSUMER_TYPE;
+  typedef MESSAGE T_MESSAGE;
+  typedef CONSUMER T_CONSUMER;
 
-  explicit DummyMQ(T_CONSUMER_TYPE& consumer) : consumer_(consumer) {
+  explicit DummyMQ(T_CONSUMER& consumer) : consumer_(consumer) {
   }
 
-  void PushMessage(const T_MESSAGE_TYPE& message) {
+  void PushMessage(const T_MESSAGE& message) {
     std::lock_guard<std::mutex> lock(mutex_);
     consumer_.OnMessage(message, 0);
   }
 
-  void PushMessage(T_MESSAGE_TYPE&& message) {
+  void PushMessage(T_MESSAGE&& message) {
     std::lock_guard<std::mutex> lock(mutex_);
     consumer_.OnMessage(message, 0);
   }
 
  private:
-  T_CONSUMER_TYPE& consumer_;
+  T_CONSUMER& consumer_;
   std::mutex mutex_;
 };
 
-#endif  // MQ_DUMMY_H
+#endif  // SANDBOX_MQ_DUMMY_H

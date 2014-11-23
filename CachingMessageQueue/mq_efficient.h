@@ -1,5 +1,5 @@
-#ifndef TOY_MQ_EFFICIENT_H
-#define TOY_MQ_EFFICIENT_H
+#ifndef SANDBOX_MQ_EFFICIENT_H
+#define SANDBOX_MQ_EFFICIENT_H
 
 // EfficientMQ is an efficient in-memory layer to buffer logged events before exporting them.
 // Intent:    To buffer events before they get to be send over the network or appended to a log file.
@@ -11,19 +11,19 @@
 #include <thread>
 #include <vector>
 
-template <typename CONSUMER_TYPE, typename MESSAGE_TYPE = std::string, size_t DEFAULT_BUFFER_SIZE = 1024>
+template <typename CONSUMER, typename MESSAGE = std::string, size_t DEFAULT_BUFFER_SIZE = 1024>
 class EfficientMQ final {
  public:
   // Type of entries to store, defaults to `std::string`.
-  typedef MESSAGE_TYPE T_MESSAGE_TYPE;
+  typedef MESSAGE T_MESSAGE;
 
   // Type of the processor of the entries.
-  // It should expose one method, void OnMessage(const T_MESSAGE_TYPE&, size_t number_of_dropped_events_if_any);
+  // It should expose one method, void OnMessage(const T_MESSAGE&, size_t number_of_dropped_events_if_any);
   // This method will be called from one thread, which is spawned and owned by an instance of EfficientMQ.
-  typedef CONSUMER_TYPE T_CONSUMER_TYPE;
+  typedef CONSUMER T_CONSUMER;
 
   // The only constructor requires the refence to the instance of the consumer of entries.
-  explicit EfficientMQ(T_CONSUMER_TYPE& consumer, size_t buffer_size = DEFAULT_BUFFER_SIZE)
+  explicit EfficientMQ(T_CONSUMER& consumer, size_t buffer_size = DEFAULT_BUFFER_SIZE)
       : consumer_(consumer),
         circular_buffer_size_(buffer_size),
         circular_buffer_(circular_buffer_size_),
@@ -43,18 +43,23 @@ class EfficientMQ final {
   // Adds an message to the buffer.
   // Supports both copy and move semantics.
   // THREAD SAFE. Blocks the calling thread for as short period of time as possible.
-  void PushMessage(const T_MESSAGE_TYPE& message) {
+  void PushMessage(const T_MESSAGE& message) {
     const size_t index = PushEventAllocate();
     circular_buffer_[index].message_body = message;
     PushEventCommit(index);
   }
-  void PushMessage(T_MESSAGE_TYPE&& message) {
+  void PushMessage(T_MESSAGE&& message) {
     const size_t index = PushEventAllocate(message);
     circular_buffer_[index].message_body = std::move(message);
     PushEventCommit(index);
   }
 
  private:
+  EfficientMQ(const EfficientMQ&) = delete;
+  EfficientMQ(EfficientMQ&&) = delete;
+  void operator=(const EfficientMQ&) = delete;
+  void operator=(EfficientMQ&&) = delete;
+
   // Increment the index respecting the circular nature of the buffer.
   void Increment(size_t& i) const {
     i = (i + 1) % circular_buffer_size_;
@@ -130,7 +135,7 @@ class EfficientMQ final {
   }
 
   // The instance of the consuming side of the FIFO buffer.
-  T_CONSUMER_TYPE& consumer_;
+  T_CONSUMER& consumer_;
 
   // The capacity of the circular buffer for intermediate events.
   // Events beyond it will be dropped.
@@ -140,7 +145,7 @@ class EfficientMQ final {
   // populated and thus is ready to be exported. The flag is neccesary, since the message at index `i+1` might
   // chronologically get finalized before the message at index `i` does.
   struct Entry {
-    T_MESSAGE_TYPE message_body;
+    T_MESSAGE message_body;
     bool finalized;
   };
 
@@ -174,4 +179,4 @@ class EfficientMQ final {
   bool destructing_ = false;
 };
 
-#endif  // TOY_MQ_EFFICIENT_H
+#endif  // SANDBOX_MQ_EFFICIENT_H
