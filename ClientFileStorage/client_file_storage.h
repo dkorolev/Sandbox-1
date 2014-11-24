@@ -7,37 +7,22 @@
 #include <string>
 #include <thread>
 
-// TODO(dkorolev): Migrate to header-only gflags.
-#include <gflags/gflags.h>
-
-DEFINE_string(current_filename,
-              "current",
-              "The name of the file to be appended to.");  // TODO(dkorolev): Timestamp it.
-
-DEFINE_string(committed_filename,
-              "done",
-              "The name of the file to rename completed files into.");  // TODO(dkorolev): Timestamp them.
-
-DEFINE_int64(max_file_age_ms,
-             1000 * 60 * 60 * 4,
-             "Start a new file as the first entry of the current one is this number of milliseconds old. "
-             "Defaults to 4 hours.");
-
-DEFINE_int64(max_file_size,
-             1024 * 1024 * 256,
-             "Start a new file after this size of the current one exceeds this. Defaults to 256KB.");
-
 struct PosixFileManager final {
   // TODO(dkorolev): Add wrappers over posix methods we need here.
 };
 
 struct CPPChrono final {
-  typedef uint64_t T_MS;
-  T_MS wall_time_ms() const {
+  typedef uint64_t T_TIMESTAMP;
+  T_TIMESTAMP wall_time() const {
     return static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
                                    std::chrono::system_clock::now().time_since_epoch()).count());
   }
 };
+
+// Default initializer. Requires users to `#include "client_file_storage_flags.h"`.
+// Otherwise, compile error would occur if no explicit `Params` are passed to the constructor.
+template <typename EXPORTER, typename MESSAGE, typename TIME_MANAGER, typename FILE_MANAGER>
+struct ClientFileStorageParamsFromFlags;
 
 template <typename EXPORTER,
           typename MESSAGE = std::string,
@@ -48,10 +33,40 @@ class ClientFileStorage final {
   typedef EXPORTER T_EXPORTER;
   typedef MESSAGE T_MESSAGE;
   typedef TIME_MANAGER T_TIME_MANAGER;
-  typedef typename T_TIME_MANAGER::T_MS T_MS;
+  typedef typename T_TIME_MANAGER::T_TIMESTAMP T_TIMESTAMP;
   typedef FILE_MANAGER T_FILE_MANAGER;
-  ClientFileStorage(T_EXPORTER& exporter, T_TIME_MANAGER& time_manager, T_FILE_MANAGER& file_manager)
-      : exporter_(exporter),
+
+  struct Params {
+    std::string current_filename;
+    std::string committed_filename;
+    typename T_TIME_MANAGER::T_TIMESTAMP max_file_age;
+    uint64_t max_file_size;
+#ifdef PARAM
+#error "'PARAM' should not be defined by this point."
+#else
+#define PARAM(x)                       \
+  Params& set_##x(decltype(x) value) { \
+    x = value;                         \
+    return *this;                      \
+  }
+    PARAM(current_filename);
+    PARAM(committed_filename);
+    PARAM(max_file_age);
+    PARAM(max_file_size);
+#undef PARAM
+#endif
+  };
+
+  static Params FromFlags() {
+    return ClientFileStorageParamsFromFlags<T_EXPORTER, T_MESSAGE, T_TIME_MANAGER, T_FILE_MANAGER>::Construct();
+  }
+
+  ClientFileStorage(T_EXPORTER& exporter,
+                    T_TIME_MANAGER& time_manager,
+                    T_FILE_MANAGER& file_manager,
+                    Params params = FromFlags())
+      : params_(params),
+        exporter_(exporter),
         time_manager_(time_manager),
         file_manager_(file_manager),
         exporter_thread_(&ClientFileStorage::ExporterThread, this) {
@@ -67,8 +82,8 @@ class ClientFileStorage final {
   }
 
   void OnMessage(const T_MESSAGE& message, size_t dropped_messages) {
-    const T_MS timestamp_ms = time_manager_.wall_time_ms();
-    ValidateCurrentFile(message.size(), timestamp_ms);
+    const T_TIMESTAMP timestamp = time_manager_.wall_time();
+    ValidateCurrentFile(message.size(), timestamp);
     file_manager_.AppendToFile(current_filename_, message);
     current_file_length_ += message.length();
     // TODO(dkorolev): Handle dropped_messages.
@@ -76,11 +91,11 @@ class ClientFileStorage final {
 
  private:
   // ValidateCurrentFiles() expires the current file and/or creates a new one as necessary.
-  void ValidateCurrentFile(const size_t new_message_length, const T_MS timestamp_ms) {
-    if (!current_filename_.empty() && (current_file_length_ + new_message_length >= FLAGS_max_file_size ||
-                                       current_file_first_ms_ + FLAGS_max_file_age_ms <= timestamp_ms)) {
+  void ValidateCurrentFile(const size_t new_message_length, const T_TIMESTAMP timestamp) {
+    if (!current_filename_.empty() && (current_file_length_ + new_message_length >= params_.max_file_size ||
+                                       current_file_first_ + params_.max_file_age <= timestamp)) {
       // TODO(dkorolev): Include timestamps in file name.
-      const std::string committed_filename = FLAGS_committed_filename;
+      const std::string committed_filename = params_.committed_filename;
 
       file_manager_.RenameFile(current_filename_, committed_filename);
 
@@ -88,7 +103,7 @@ class ClientFileStorage final {
         std::unique_lock<std::mutex> lock(mutex_);
         // TODO(dkorolev): Discuss this event with Alex. Keep a hack so far.
         next_file_.filename = committed_filename;
-        // TODO(dkorolev): Add current_file_length_, current_file_first_ms_, current_file_last_ms_.
+        // TODO(dkorolev): Add current_file_length_, current_file_first_, current_file_last_.
       }
       condition_variable_.notify_all();
 
@@ -96,10 +111,10 @@ class ClientFileStorage final {
     }
 
     if (current_filename_.empty()) {
-      current_filename_ = FLAGS_current_filename;  // TODO(dkorolev): Timestamp it.
+      current_filename_ = params_.current_filename;  // TODO(dkorolev): Timestamp it.
       file_manager_.CreateFile(current_filename_);
       current_file_length_ = 0;
-      current_file_first_ms_ = current_file_last_ms_ = timestamp_ms;
+      current_file_first_ = current_file_last_ = timestamp;
     }
   }
 
@@ -118,12 +133,13 @@ class ClientFileStorage final {
       }
       // TODO(dkorolev): Handle the file.
       // exporter_.OnFileCommitted(
-      //    committed_filename, current_file_length_, current_file_first_ms_, current_file_last_ms_);
+      //    committed_filename, current_file_length_, current_file_first_, current_file_last_);
       next_file_.filename.clear();
       // TODO(dkorolev): This file should be removed.
     }
   }
 
+  Params params_;
   T_EXPORTER& exporter_;
   T_TIME_MANAGER& time_manager_;
   T_FILE_MANAGER& file_manager_;
@@ -131,8 +147,8 @@ class ClientFileStorage final {
   // TODO(dkorolev): Add it.
   std::string current_filename_;
   uint64_t current_file_length_ = 0;
-  uint64_t current_file_first_ms_ = 0;
-  uint64_t current_file_last_ms_ = 0;
+  uint64_t current_file_first_ = 0;
+  uint64_t current_file_last_ = 0;
 
   std::thread exporter_thread_;
   bool destructing_ = false;

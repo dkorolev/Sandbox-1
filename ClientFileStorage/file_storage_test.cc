@@ -8,77 +8,12 @@
 #include <string>
 
 #include "client_file_storage.h"
+#include "client_file_storage_flags.h"  // Test the command-line flags parsing sub-module as well.
 
 // TODO(dkorolev): Migrate to a header-only gtest.
 #include "gtest/gtest.h"
 
-struct MockTimeManager final {
- public:
-  typedef uint64_t T_MS;
-  MockTimeManager(T_MS ms = 0) : ms(ms) {
-  }
-  T_MS wall_time_ms() const {
-    return ms;
-  }
-  T_MS ms;
-};
-
-struct MockFileManager final {
-  struct FileNotFoundException : std::exception {};
-  struct FileAlreadyExistsException : std::exception {};
-
-  size_t NumberOfFiles() const {
-    return files.size();
-  }
-
-  void CreateFile(const std::string& filename) {
-    if (files.find(filename) != files.end()) {
-      throw FileAlreadyExistsException();
-    }
-    files[filename] = "";
-  }
-
-  // TODO(dkorolev): Change from file names to file descriptors.
-  void AppendToFile(const std::string& filename, const std::string& message) {
-    if (files.find(filename) == files.end()) {
-      throw FileNotFoundException();
-    }
-    files[filename].append(message);
-  }
-
-  void RenameFile(const std::string& from, const std::string& to) {
-    if (files.find(from) == files.end()) {
-      throw FileNotFoundException();
-    }
-    if (files.find(to) != files.end()) {
-      throw FileAlreadyExistsException();
-    }
-    files[to] = files[from];
-    files.erase(from);
-  }
-
-  const std::string& FileContents(const std::string& filename) const {
-    const auto cit = files.find(filename);
-    if (cit != files.end()) {
-      return cit->second;
-    } else {
-      throw FileNotFoundException();
-    }
-  }
-
-  std::map<std::string, std::string> files;
-};
-
-template <typename MS>
-struct GenericMockExporter final {
-  typedef MS T_MS;
-  void OnFileCommitted(const std::string& filename,
-                       const uint64_t length,
-                       const T_MS first_ms,
-                       const T_MS last_ms) {
-  }
-};
-typedef struct GenericMockExporter<typename MockTimeManager::T_MS> MockExporter;
+#include "test_mocks.h"
 
 TEST(ClientFileStorageTest, KeepsSameFile) {
   FLAGS_current_filename = "KeepsSameFile";  // TODO(dkorolev): Timestamp the filename.

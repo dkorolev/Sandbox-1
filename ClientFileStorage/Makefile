@@ -8,8 +8,9 @@ PWD=$(shell pwd)
 SRC=$(wildcard *.cc)
 BIN=$(SRC:%.cc=build/%)
 
-test: build/file_storage_test
+test: all
 	./build/file_storage_test
+	./build/file_storage_test_no_flags
 
 all: build ${BIN}
 
