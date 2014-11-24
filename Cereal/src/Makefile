@@ -1,6 +1,6 @@
 .PHONY: all indent clean check
 
-INCLUDE_PATH=3Party/cereal-1.0.0/include
+INCLUDE_PATH=../3Party/cereal-1.0.0/include
 CPP=g++
 CPPFLAGS=-std=c++11 -O3 -Wall -I ${INCLUDE_PATH}
 LDFLAGS=-pthread -lgflags
