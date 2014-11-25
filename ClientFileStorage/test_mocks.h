@@ -66,10 +66,15 @@ struct MockFileManager final {
 template <typename TIMESTAMP>
 struct GenericMockExporter final {
   typedef TIMESTAMP T_TIMESTAMP;
+  /*
   void OnFileCommitted(const std::string& filename,
                        const uint64_t length,
                        const T_TIMESTAMP first_ms,
                        const T_TIMESTAMP last_ms) {
+  }
+  */
+  bool ReadyToAcceptData() const {
+    return false;
   }
 };
 typedef struct GenericMockExporter<typename MockTimeManager::T_TIMESTAMP> MockExporter;

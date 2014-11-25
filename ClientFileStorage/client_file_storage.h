@@ -37,22 +37,19 @@ class ClientFileStorage final {
   typedef FILE_MANAGER T_FILE_MANAGER;
 
   struct Params {
-    std::string current_filename;
-    std::string committed_filename;
-    typename T_TIME_MANAGER::T_TIMESTAMP max_file_age;
-    uint64_t max_file_size;
 #ifdef PARAM
 #error "'PARAM' should not be defined by this point."
 #else
-#define PARAM(x)                       \
-  Params& set_##x(decltype(x) value) { \
-    x = value;                         \
-    return *this;                      \
+#define PARAM(type, param)          \
+  type param;                       \
+  Params& set_##param(type value) { \
+    param = value;                  \
+    return *this;                   \
   }
-    PARAM(current_filename);
-    PARAM(committed_filename);
-    PARAM(max_file_age);
-    PARAM(max_file_size);
+    PARAM(std::string, current_filename);
+    PARAM(std::string, committed_filename);
+    PARAM(typename T_TIME_MANAGER::T_TIMESTAMP, max_file_age);
+    PARAM(uint64_t, max_file_size);
 #undef PARAM
 #endif
   };
@@ -99,13 +96,12 @@ class ClientFileStorage final {
 
       file_manager_.RenameFile(current_filename_, committed_filename);
 
-      {
-        std::unique_lock<std::mutex> lock(mutex_);
-        // TODO(dkorolev): Discuss this event with Alex. Keep a hack so far.
-        next_file_.filename = committed_filename;
-        // TODO(dkorolev): Add current_file_length_, current_file_first_, current_file_last_.
+      // ValidateCurrentFile is called from OnMessage() only.
+      // Thus, as long as OnMessage() is not reentrant (which is the case for the message queue we use),
+      // ValidateCurrentFile() is also not reentrant, and thus does not require locking.
+      if (exporter_.ReadyToAcceptData()) {
+        condition_variable_.notify_all();
       }
-      condition_variable_.notify_all();
 
       current_filename_.clear();
     }
@@ -119,23 +115,18 @@ class ClientFileStorage final {
   }
 
   void ExporterThread() {
-    // TODO(dkorolev): Chat with Alex on how to best handle multiple files. What if WiFi is now off?
     std::unique_lock<std::mutex> lock(mutex_);
     while (true) {
-      if (next_file_.filename.empty()) {
-        if (destructing_) {
-          return;
-        }
-        condition_variable_.wait(lock, [this] { return !next_file_.filename.empty() || destructing_; });
-        if (destructing_) {
-          return;
-        }
+      // TODO(dkorolev): Code and test file scan and processing.
+      if (destructing_) {
+        return;
       }
-      // TODO(dkorolev): Handle the file.
-      // exporter_.OnFileCommitted(
-      //    committed_filename, current_file_length_, current_file_first_, current_file_last_);
-      next_file_.filename.clear();
-      // TODO(dkorolev): This file should be removed.
+      // TODO(dkorolev): And scan files.
+      condition_variable_.wait(lock, [this] { return destructing_ && !exporter_.ReadyToAcceptData(); });
+      if (destructing_) {
+        return;
+      }
+      // TODO(dkorolev): If ready to accept, process data from the new file.
     }
   }
 
@@ -151,14 +142,9 @@ class ClientFileStorage final {
   uint64_t current_file_last_ = 0;
 
   std::thread exporter_thread_;
-  bool destructing_ = false;
-  // TODO(dkorolev): Rethink this with Alex: do pushing per-file or pass in a list of them?
-  struct NextFileInfo {
-    std::string filename;
-  };
-  NextFileInfo next_file_;
   std::mutex mutex_;
   std::condition_variable condition_variable_;
+  bool destructing_ = false;
 
   ClientFileStorage(const ClientFileStorage&) = delete;
   ClientFileStorage(ClientFileStorage&&) = delete;
