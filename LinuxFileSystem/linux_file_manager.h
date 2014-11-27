@@ -159,13 +159,14 @@ class LinuxFileManager final : FileManager {
     std::ifstream fi(dir_prefix_ + filename);
     if (!fi) {
       throw CanNotReadFileException();
+    } else {
+      std::string data;
+      fi.seekg(0, std::ios::end);
+      data.reserve(fi.tellg());
+      fi.seekg(0, std::ios::beg);
+      data.assign((std::istreambuf_iterator<char>(fi)), std::istreambuf_iterator<char>());
+      return data;
     }
-    std::string data;
-    fi.seekg(0, std::ios::end);
-    data.reserve(fi.tellg());
-    fi.seekg(0, std::ios::beg);
-    data.assign((std::istreambuf_iterator<char>(fi)), std::istreambuf_iterator<char>());
-    return data;
   }
 
   inline void RenameFile(const std::string& from, const std::string& to) const {
