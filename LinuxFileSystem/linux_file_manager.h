@@ -11,14 +11,17 @@
 #include <memory>
 #include <string>
 
-#include <dirent.h>  // {open,read,close}dir().
-#include <unistd.h>  // unlink().
+#include <dirent.h>    // {open,read,close}dir().
+#include <sys/stat.h>  // stat().
+#include <unistd.h>    // unlink().
 
 struct FileManager {
   struct Exception : std::exception {};
   struct CanNotCreateFileException : Exception {};
+  struct FileAlreadyExistsException : Exception {};
   struct CanNotReadFileException : Exception {};
   struct CanNotRenameFileException : Exception {};
+  struct CanNotGetFileSizeException : Exception {};
   struct CanNotRemoveFileException : Exception {};
   struct CanNotScanDirectoryException : Exception {};
   struct NullFileHandleException : Exception {};
@@ -29,7 +32,8 @@ class LinuxFileManager final : FileManager {
  public:
   class Handle {
    public:
-    explicit inline Handle(const std::string& absolute_filename) : impl_(new Impl(absolute_filename)) {
+    explicit inline Handle(const std::string& absolute_filename, bool truncate)
+        : impl_(new Impl(absolute_filename, truncate)) {
     }
 
     inline Handle(Handle&& rhs) : impl_(std::move(rhs.impl_)) {
@@ -54,8 +58,8 @@ class LinuxFileManager final : FileManager {
    private:
     class Impl {
      public:
-      inline Impl(const std::string& absolute_filename)
-          : fo_(absolute_filename, std::ios::binary | std::ios::trunc) {
+      inline Impl(const std::string& absolute_filename, bool truncate)
+          : fo_(absolute_filename, std::ios::binary | (truncate ? std::ios::trunc : std::ios::app)) {
         if (!fo_) {
           throw CanNotCreateFileException();
         }
@@ -138,8 +142,17 @@ class LinuxFileManager final : FileManager {
   explicit inline LinuxFileManager(const std::string& working_dir = "./.tmp/") : dir_prefix_(working_dir) {
   }
 
-  inline Handle CreateAppendOnlyFile(const std::string& filename) {
-    return Handle(dir_prefix_ + filename);
+  inline Handle CreateFile(const std::string& filename) const {
+    try {
+      GetFileSize(filename);
+      throw FileAlreadyExistsException();
+    } catch (CanNotGetFileSizeException&) {
+      return Handle(dir_prefix_ + filename, true);
+    }
+  }
+
+  inline Handle CreateOrAppendToFile(const std::string& filename) const {
+    return Handle(dir_prefix_ + filename, false);
   }
 
   inline std::string ReadFile(const std::string& filename) const {
@@ -155,25 +168,34 @@ class LinuxFileManager final : FileManager {
     return data;
   }
 
-  inline void RenameFile(const std::string& from, const std::string& to) {
+  inline void RenameFile(const std::string& from, const std::string& to) const {
     if (rename((dir_prefix_ + from).c_str(), (dir_prefix_ + to).c_str()) == -1) {
       throw CanNotRenameFileException();
     }
   }
 
-  inline void RemoveFile(const std::string& filename) {
+  inline size_t GetFileSize(const std::string& filename) const {
+    struct stat result;
+    if (stat((dir_prefix_ + filename).c_str(), &result)) {
+      throw CanNotGetFileSizeException();
+    } else {
+      return result.st_size;
+    }
+  }
+
+  inline void RemoveFile(const std::string& filename) const {
     if (unlink((dir_prefix_ + filename).c_str()) != 0) {
       throw CanNotRemoveFileException();
     }
   }
 
-  inline DirectoryIterator ScanDirectory(const std::string& pattern) {
+  inline DirectoryIterator ScanDirectory(const std::string& pattern) const {
     return DirectoryIterator(dir_prefix_, pattern);
   }
 
  private:
   // Should include the trailing slash, potentially plarform-dependent.
-  std::string dir_prefix_;
+  const std::string dir_prefix_;
 };
 
 #endif  // SANDBOX_LINUX_FILE_MANAGER_H

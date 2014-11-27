@@ -12,16 +12,25 @@ TEST(LinuxFileSystem, FileOperations) {
   LinuxFileManager fs;
 
   {
-    LinuxFileManager::Handle f1 = fs.CreateAppendOnlyFile("foo");
+    LinuxFileManager::Handle f1 = fs.CreateFile("foo");
     f1.Append("test\n");
     f1.Append("passed\n");
+    ASSERT_THROW(fs.CreateFile("foo"), FileManager::FileAlreadyExistsException);
   }
 
-  fs.CreateAppendOnlyFile("bar").Append("another ").Append("test ").Append("passed");
+  {
+    EXPECT_EQ(12, fs.GetFileSize("foo"));
+    LinuxFileManager::Handle f1_append = fs.CreateOrAppendToFile("foo");
+    f1_append.Append("indeed!\n");
+  }
 
-  ASSERT_THROW(fs.CreateAppendOnlyFile("impossible_file"), FileManager::CanNotCreateFileException);
+  fs.CreateOrAppendToFile("bar").Append("another ").Append("test ").Append("passed");
 
-  EXPECT_EQ("test\npassed\n", fs.ReadFile("foo"));
+  EXPECT_EQ(20, fs.GetFileSize("foo"));
+  EXPECT_EQ(19, fs.GetFileSize("bar"));
+  ASSERT_THROW(fs.GetFileSize("baz"), FileManager::CanNotGetFileSizeException);
+
+  EXPECT_EQ("test\npassed\nindeed!\n", fs.ReadFile("foo"));
   EXPECT_EQ("another test passed", fs.ReadFile("bar"));
 
   ASSERT_THROW(fs.ReadFile("baz"), FileManager::CanNotReadFileException);
@@ -49,13 +58,13 @@ TEST(LinuxFileSystem, BinaryDataFileOperations) {
     binary_string[4] = 'b';
     binary_string[5] = 'a';
     binary_string[6] = 'r';
-    fs.CreateAppendOnlyFile("1.bin").Append(binary_string);
+    fs.CreateFile("1.bin").Append(binary_string);
   }
 
-  fs.CreateAppendOnlyFile("2.bin").Append(std::string(100, '\0'));
+  fs.CreateFile("2.bin").Append(std::string(100, '\0'));
 
-  fs.CreateAppendOnlyFile("3.bin").Append("\n");
-  fs.CreateAppendOnlyFile("4.bin").Append("\r\n");
+  fs.CreateFile("3.bin").Append("\n");
+  fs.CreateFile("4.bin").Append("\r\n");
 
   const std::string result = fs.ReadFile("1.bin");
   EXPECT_EQ(7, result.length());
@@ -75,15 +84,15 @@ TEST(LinuxFileSystem, BinaryDataFileOperations) {
 TEST(LinuxFileSystem, DirectoryOperations) {
   LinuxFileManager fs;
 
-  fs.CreateAppendOnlyFile("test-001").Append("this\n");
-  fs.CreateAppendOnlyFile("test-002").Append("too\n");
-  fs.CreateAppendOnlyFile("test-007").Append("shall\n");
-  fs.CreateAppendOnlyFile("test-042").Append("pass\n");
+  fs.CreateFile("test-001").Append("this\n");
+  fs.CreateFile("test-002").Append("too\n");
+  fs.CreateFile("test-007").Append("shall\n");
+  fs.CreateFile("test-042").Append("pass\n");
 
-  fs.CreateAppendOnlyFile("this").Append("blah");
-  fs.CreateAppendOnlyFile("will").Append("blah");
-  fs.CreateAppendOnlyFile("not").Append("blah");
-  fs.CreateAppendOnlyFile("match").Append("blah");
+  fs.CreateFile("this").Append("blah");
+  fs.CreateFile("will").Append("blah");
+  fs.CreateFile("not").Append("blah");
+  fs.CreateFile("match").Append("blah");
 
   LinuxFileManager::DirectoryIterator dit = fs.ScanDirectory("test-???");
   std::vector<std::string> files;
@@ -117,7 +126,7 @@ TEST(LinuxFileSystem, Exceptions) {
   {
     LinuxFileManager fs;
     {
-      LinuxFileManager::Handle f1 = fs.CreateAppendOnlyFile("foo");
+      LinuxFileManager::Handle f1 = fs.CreateFile("foo");
       f1.Append("test\n");
       LinuxFileManager::Handle f2 = std::move(f1);
       ASSERT_THROW(f1.Append("failed\n"), FileManager::NullFileHandleException);
@@ -126,7 +135,7 @@ TEST(LinuxFileSystem, Exceptions) {
   }
   {
     LinuxFileManager fs;
-    LinuxFileManager::DirectoryIterator dit1 = fs.ScanDirectory("meh"); 
+    LinuxFileManager::DirectoryIterator dit1 = fs.ScanDirectory("meh");
     ASSERT_EQ("", dit1.Next());
     LinuxFileManager::DirectoryIterator dit2 = std::move(dit1);
     ASSERT_THROW(dit1.Next(), FileManager::NullDirectoryIteratorException);
