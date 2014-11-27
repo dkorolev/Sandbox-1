@@ -3,7 +3,7 @@
 
 // A wrapper for the filesystem. Features file append, rename, read and directory scan.
 // Directory scan only supports question marks in patterns.
-// Uses C++11 complemented with POSIX rename(), unlink() and {open,read,close}dir().
+// Uses C++11 complemented with POSIX rename(), stat(), unlink() and {open,read,close}dir().
 
 #include <cstdio>  // rename().
 #include <exception>
