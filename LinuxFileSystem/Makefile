@@ -16,6 +16,7 @@ BIN_FOR_COVERAGE=$(SRC:%.cc=build/coverage/%)
 test: all
 	rm -rf .tmp
 	mkdir .tmp
+	mkdir .tmp/impossible_file
 	./build/test && rm -rf .tmp
 
 all: build ${BIN}
@@ -54,7 +55,7 @@ build/coverage/%: %.cc *.h
 	${CPP} ${CPPFLAGS_FOR_COVERAGE} -o $@ $< /usr/src/gtest/libgtest.a ${LDFLAGS_FOR_COVERAGE}
 
 coverage: build/coverage ${BIN_FOR_COVERAGE}
-	rm -rf .tmp; mkdir .tmp; ./build/coverage/test && rm -rf .tmp
+	rm -rf .tmp; mkdir .tmp; mkdir .tmp/impossible_file; ./build/coverage/test && rm -rf .tmp
 	gcov test.cc
 	geninfo . --output-file coverage.info
 	genhtml coverage.info --output-directory build/coverage | grep -A 2 "^Overall"

@@ -19,6 +19,8 @@ TEST(LinuxFileSystem, FileOperations) {
 
   fs.CreateAppendOnlyFile("bar").Append("another ").Append("test ").Append("passed");
 
+  ASSERT_THROW(fs.CreateAppendOnlyFile("impossible_file"), FileManager::CanNotCreateFileException);
+
   EXPECT_EQ("test\npassed\n", fs.ReadFile("foo"));
   EXPECT_EQ("another test passed", fs.ReadFile("bar"));
 
@@ -105,6 +107,30 @@ TEST(LinuxFileSystem, DirectoryOperations) {
   fs.RemoveFile("will");
   fs.RemoveFile("not");
   fs.RemoveFile("match");
+}
+
+TEST(LinuxFileSystem, Exceptions) {
+  {
+    LinuxFileManager fs("/foo/bar/baz/does/not/exist/");
+    ASSERT_THROW(fs.ScanDirectory(""), FileManager::CanNotScanDirectoryException);
+  }
+  {
+    LinuxFileManager fs;
+    {
+      LinuxFileManager::Handle f1 = fs.CreateAppendOnlyFile("foo");
+      f1.Append("test\n");
+      LinuxFileManager::Handle f2 = std::move(f1);
+      ASSERT_THROW(f1.Append("failed\n"), FileManager::NullFileHandleException);
+    }
+    fs.RemoveFile("foo");
+  }
+  {
+    LinuxFileManager fs;
+    LinuxFileManager::DirectoryIterator dit1 = fs.ScanDirectory("meh"); 
+    ASSERT_EQ("", dit1.Next());
+    LinuxFileManager::DirectoryIterator dit2 = std::move(dit1);
+    ASSERT_THROW(dit1.Next(), FileManager::NullDirectoryIteratorException);
+  }
 }
 
 // TODO(dkorolev): /usr/src/gtest/libgtest_main.a is not header_only, fix it.
