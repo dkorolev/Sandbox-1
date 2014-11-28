@@ -45,6 +45,7 @@ TEST(LinuxFileSystem, FileOperations) {
 
   EXPECT_EQ("another test passed", fs.ReadFileToString("baz"));
   fs.RemoveFile("baz");
+  ASSERT_THROW(fs.ReadFileToString("baz"), FileManager::CanNotReadFileException);
 }
 
 TEST(LinuxFileSystem, BinaryDataFileOperations) {
