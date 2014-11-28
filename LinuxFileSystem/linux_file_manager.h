@@ -112,7 +112,7 @@ class LinuxFileManager final : FileManager {
           if (!entry) {
             return "";
           } else {
-            std::string current(entry->d_name);
+            const std::string current(entry->d_name);
             if (current != "." && current != ".." && Match(current)) {
               return current;
             }
@@ -139,7 +139,9 @@ class LinuxFileManager final : FileManager {
     std::string pattern_;
   };
 
-  explicit inline LinuxFileManager(const std::string& working_dir = "./.tmp/") : dir_prefix_(working_dir) {
+  // Should include the trailing slash.
+  explicit inline LinuxFileManager(const std::string& working_dir_with_trailing_slash = "./.tmp/")
+      : dir_prefix_(working_dir_with_trailing_slash) {
   }
 
   inline Handle CreateFile(const std::string& filename) const {
