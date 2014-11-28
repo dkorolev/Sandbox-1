@@ -120,6 +120,12 @@ TEST(LinuxFileSystem, DirectoryOperations) {
 
 TEST(LinuxFileSystem, Exceptions) {
   {
+    std::unique_ptr<LinuxFileManager> p;
+    ASSERT_THROW(p.reset(new LinuxFileManager("")), FileManager::NeedTrailingSlashInWorkingDirectoryException);
+    ASSERT_THROW(p.reset(new LinuxFileManager("/foo/bar")),
+                 FileManager::NeedTrailingSlashInWorkingDirectoryException);
+  }
+  {
     LinuxFileManager fs("/foo/bar/baz/does/not/exist/");
     ASSERT_THROW(fs.ScanDirectory(""), FileManager::CanNotScanDirectoryException);
   }

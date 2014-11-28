@@ -27,6 +27,7 @@ struct FileManager {
   struct CanNotScanDirectoryException : Exception {};
   struct NullFileHandleException : Exception {};
   struct NullDirectoryIteratorException : Exception {};
+  struct NeedTrailingSlashInWorkingDirectoryException : Exception {};
 };
 
 class LinuxFileManager final : FileManager {
@@ -143,6 +144,9 @@ class LinuxFileManager final : FileManager {
   // Should include the trailing slash.
   explicit inline LinuxFileManager(const std::string& working_dir_with_trailing_slash = "./.tmp/")
       : dir_prefix_(working_dir_with_trailing_slash) {
+    if (dir_prefix_.empty() || dir_prefix_.back() != '/') {
+      throw NeedTrailingSlashInWorkingDirectoryException();
+    }
   }
 
   inline Handle CreateFile(const std::string& filename) const {
