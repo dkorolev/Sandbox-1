@@ -30,20 +30,20 @@ TEST(LinuxFileSystem, FileOperations) {
   EXPECT_EQ(19, fs.GetFileSize("bar"));
   ASSERT_THROW(fs.GetFileSize("baz"), FileManager::CanNotGetFileSizeException);
 
-  EXPECT_EQ("test\npassed\nindeed!\n", fs.ReadFile("foo"));
-  EXPECT_EQ("another test passed", fs.ReadFile("bar"));
+  EXPECT_EQ("test\npassed\nindeed!\n", fs.ReadFileToString("foo"));
+  EXPECT_EQ("another test passed", fs.ReadFileToString("bar"));
 
-  ASSERT_THROW(fs.ReadFile("baz"), FileManager::CanNotReadFileException);
+  ASSERT_THROW(fs.ReadFileToString("baz"), FileManager::CanNotReadFileException);
 
   fs.RemoveFile("foo");
   ASSERT_THROW(fs.RemoveFile("foo"), FileManager::CanNotRemoveFileException);
 
   fs.RenameFile("bar", "baz");
   ASSERT_THROW(fs.RenameFile("bar", "meh"), FileManager::CanNotRenameFileException);
-  ASSERT_THROW(fs.ReadFile("bar"), FileManager::CanNotReadFileException);
+  ASSERT_THROW(fs.ReadFileToString("bar"), FileManager::CanNotReadFileException);
   ASSERT_THROW(fs.RemoveFile("bar"), FileManager::CanNotRemoveFileException);
 
-  EXPECT_EQ("another test passed", fs.ReadFile("baz"));
+  EXPECT_EQ("another test passed", fs.ReadFileToString("baz"));
   fs.RemoveFile("baz");
 }
 
@@ -66,14 +66,14 @@ TEST(LinuxFileSystem, BinaryDataFileOperations) {
   fs.CreateFile("3.bin").Append("\n");
   fs.CreateFile("4.bin").Append("\r\n");
 
-  const std::string result = fs.ReadFile("1.bin");
+  const std::string result = fs.ReadFileToString("1.bin");
   EXPECT_EQ(7, result.length());
   EXPECT_EQ("foo", std::string(result.c_str()));
   EXPECT_EQ("bar", std::string(result.c_str() + 4));
 
-  EXPECT_EQ(100, fs.ReadFile("2.bin").length());
-  EXPECT_EQ("\n", fs.ReadFile("3.bin"));
-  EXPECT_EQ("\r\n", fs.ReadFile("4.bin"));
+  EXPECT_EQ(100, fs.ReadFileToString("2.bin").length());
+  EXPECT_EQ("\n", fs.ReadFileToString("3.bin"));
+  EXPECT_EQ("\r\n", fs.ReadFileToString("4.bin"));
 
   fs.RemoveFile("1.bin");
   fs.RemoveFile("2.bin");

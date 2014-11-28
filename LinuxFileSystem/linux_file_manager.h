@@ -10,6 +10,7 @@
 #include <fstream>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <dirent.h>    // {open,read,close}dir().
 #include <sys/stat.h>  // stat().
@@ -157,18 +158,26 @@ class LinuxFileManager final : FileManager {
     return Handle(dir_prefix_ + filename, false);
   }
 
-  inline std::string ReadFile(const std::string& filename) const {
+  inline std::vector<char> ReadFile(const std::string& filename) const {
     std::ifstream fi(dir_prefix_ + filename);
     if (!fi) {
       throw CanNotReadFileException();
     } else {
-      std::string data;
       fi.seekg(0, std::ios::end);
-      data.reserve(fi.tellg());
+      const size_t size = fi.tellg();
       fi.seekg(0, std::ios::beg);
-      data.assign((std::istreambuf_iterator<char>(fi)), std::istreambuf_iterator<char>());
+      std::vector<char> data(size);
+      fi.read(&data[0], size);
+      if (!fi) {
+        throw CanNotReadFileException();
+      }
       return data;
     }
+  }
+
+  inline std::string ReadFileToString(const std::string& filename) const {
+    std::vector<char> data = ReadFile(filename);
+    return std::string(data.begin(), data.end());
   }
 
   inline void RenameFile(const std::string& from, const std::string& to) const {
