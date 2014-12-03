@@ -3,16 +3,16 @@
 #include <vector>
 #include <string>
 
-#include "linux_file_manager.h"
+#include "posix_file_manager.h"
 
-// TODO(dkorolev): Migrate to a header-only gtest.
-#include "gtest/gtest.h"
+#include "../3party/gtest/gtest.h"
+#include "../3party/gtest/gtest-main.h"
 
-TEST(LinuxFileSystem, FileOperations) {
-  LinuxFileManager fs;
+TEST(PosixFileSystem, FileOperations) {
+  PosixFileManager fs;
 
   {
-    LinuxFileManager::Handle f1 = fs.CreateFile("foo");
+    PosixFileManager::Handle f1 = fs.CreateFile("foo");
     f1.Append("test\n");
     f1.Append("passed\n");
     ASSERT_THROW(fs.CreateFile("foo"), FileManager::FileAlreadyExistsException);
@@ -20,7 +20,7 @@ TEST(LinuxFileSystem, FileOperations) {
 
   {
     EXPECT_EQ(12, fs.GetFileSize("foo"));
-    LinuxFileManager::Handle f1_append = fs.CreateOrAppendToFile("foo");
+    PosixFileManager::Handle f1_append = fs.CreateOrAppendToFile("foo");
     f1_append.Append("indeed!\n");
   }
 
@@ -48,8 +48,8 @@ TEST(LinuxFileSystem, FileOperations) {
   ASSERT_THROW(fs.ReadFileToString("baz"), FileManager::CanNotReadFileException);
 }
 
-TEST(LinuxFileSystem, BinaryDataFileOperations) {
-  LinuxFileManager fs;
+TEST(PosixFileSystem, BinaryDataFileOperations) {
+  PosixFileManager fs;
 
   {
     std::string binary_string(7, '\0');
@@ -82,8 +82,8 @@ TEST(LinuxFileSystem, BinaryDataFileOperations) {
   fs.RemoveFile("4.bin");
 }
 
-TEST(LinuxFileSystem, DirectoryOperations) {
-  LinuxFileManager fs;
+TEST(PosixFileSystem, DirectoryOperations) {
+  PosixFileManager fs;
 
   fs.CreateFile("test-001").Append("this\n");
   fs.CreateFile("test-002").Append("too\n");
@@ -95,7 +95,7 @@ TEST(LinuxFileSystem, DirectoryOperations) {
   fs.CreateFile("not").Append("blah");
   fs.CreateFile("match").Append("blah");
 
-  LinuxFileManager::DirectoryIterator dit = fs.ScanDirectory("test-???");
+  PosixFileManager::DirectoryIterator dit = fs.ScanDirectory("test-???");
   std::vector<std::string> files;
   std::string current;
   while (current = dit.Next(), !current.empty()) {
@@ -119,38 +119,32 @@ TEST(LinuxFileSystem, DirectoryOperations) {
   fs.RemoveFile("match");
 }
 
-TEST(LinuxFileSystem, Exceptions) {
+TEST(PosixFileSystem, Exceptions) {
   {
-    std::unique_ptr<LinuxFileManager> p;
-    ASSERT_THROW(p.reset(new LinuxFileManager("")), FileManager::NeedTrailingSlashInWorkingDirectoryException);
-    ASSERT_THROW(p.reset(new LinuxFileManager("/foo/bar")),
+    std::unique_ptr<PosixFileManager> p;
+    ASSERT_THROW(p.reset(new PosixFileManager("")), FileManager::NeedTrailingSlashInWorkingDirectoryException);
+    ASSERT_THROW(p.reset(new PosixFileManager("/foo/bar")),
                  FileManager::NeedTrailingSlashInWorkingDirectoryException);
   }
   {
-    LinuxFileManager fs("/foo/bar/baz/does/not/exist/");
+    PosixFileManager fs("/foo/bar/baz/does/not/exist/");
     ASSERT_THROW(fs.ScanDirectory(""), FileManager::CanNotScanDirectoryException);
   }
   {
-    LinuxFileManager fs;
+    PosixFileManager fs;
     {
-      LinuxFileManager::Handle f1 = fs.CreateFile("foo");
+      PosixFileManager::Handle f1 = fs.CreateFile("foo");
       f1.Append("test\n");
-      LinuxFileManager::Handle f2 = std::move(f1);
+      PosixFileManager::Handle f2 = std::move(f1);
       ASSERT_THROW(f1.Append("failed\n"), FileManager::NullFileHandleException);
     }
     fs.RemoveFile("foo");
   }
   {
-    LinuxFileManager fs;
-    LinuxFileManager::DirectoryIterator dit1 = fs.ScanDirectory("meh");
+    PosixFileManager fs;
+    PosixFileManager::DirectoryIterator dit1 = fs.ScanDirectory("meh");
     ASSERT_EQ("", dit1.Next());
-    LinuxFileManager::DirectoryIterator dit2 = std::move(dit1);
+    PosixFileManager::DirectoryIterator dit2 = std::move(dit1);
     ASSERT_THROW(dit1.Next(), FileManager::NullDirectoryIteratorException);
   }
-}
-
-// TODO(dkorolev): /usr/src/gtest/libgtest_main.a is not header_only, fix it.
-int main(int argc, char** argv) {
-  testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
 }

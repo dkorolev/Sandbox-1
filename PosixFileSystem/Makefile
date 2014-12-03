@@ -1,10 +1,8 @@
 .PHONY: test all indent clean check coverage
 
-# TODO(dkorolev): Remove Google libraries.
-
 CPP=g++
 CPPFLAGS=-std=c++11 -O3 -Wall
-LDFLAGS=-pthread -lgflags
+LDFLAGS=-pthread
 CPPFLAGS_FOR_COVERAGE=${CPPFLAGS} -O0 -g -fprofile-arcs -ftest-coverage
 LDFLAGS_FOR_COVERAGE=${LDFLAGS}
 
@@ -43,15 +41,13 @@ build:
 	mkdir -p $@
 
 build/%: %.cc *.h
-	# TODO(dkorolev): Get rid of Google dependencies here.
-	${CPP} ${CPPFLAGS} -o $@ $< /usr/src/gtest/libgtest.a ${LDFLAGS}
+	${CPP} ${CPPFLAGS} -o $@ $< ${LDFLAGS}
 
 build/coverage:
 	mkdir -p $@
 
 build/coverage/%: %.cc *.h
-	# TODO(dkorolev): Get rid of Google dependencies here.
-	${CPP} ${CPPFLAGS_FOR_COVERAGE} -o $@ $< /usr/src/gtest/libgtest.a ${LDFLAGS_FOR_COVERAGE}
+	${CPP} ${CPPFLAGS_FOR_COVERAGE} -o $@ $< ${LDFLAGS_FOR_COVERAGE}
 
 coverage: build/coverage ${BIN_FOR_COVERAGE}
 	rm -rf .tmp; mkdir .tmp; ./build/coverage/test && rm -rf .tmp

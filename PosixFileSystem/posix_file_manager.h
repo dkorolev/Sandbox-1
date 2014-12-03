@@ -1,5 +1,5 @@
-#ifndef SANDBOX_LINUX_FILE_MANAGER_H
-#define SANDBOX_LINUX_FILE_MANAGER_H
+#ifndef SANDBOX_POSIX_FILE_MANAGER_H
+#define SANDBOX_POSIX_FILE_MANAGER_H
 
 // A wrapper for the filesystem. Features file append, rename, read and directory scan.
 // Directory scan only supports question marks in patterns.
@@ -29,7 +29,7 @@ struct FileManager {
   struct NeedTrailingSlashInWorkingDirectoryException : Exception {};
 };
 
-class LinuxFileManager final : FileManager {
+class PosixFileManager final : FileManager {
  public:
   class Handle {
    public:
@@ -141,7 +141,7 @@ class LinuxFileManager final : FileManager {
   };
 
   // Should include the trailing slash.
-  explicit inline LinuxFileManager(const std::string& working_dir_with_trailing_slash = "./.tmp/")
+  explicit inline PosixFileManager(const std::string& working_dir_with_trailing_slash = "./.tmp/")
       : dir_prefix_(working_dir_with_trailing_slash) {
     if (dir_prefix_.empty() || dir_prefix_.back() != '/') {
       throw NeedTrailingSlashInWorkingDirectoryException();
@@ -213,4 +213,4 @@ class LinuxFileManager final : FileManager {
   const std::string dir_prefix_;
 };
 
-#endif  // SANDBOX_LINUX_FILE_MANAGER_H
+#endif  // SANDBOX_POSIX_FILE_MANAGER_H

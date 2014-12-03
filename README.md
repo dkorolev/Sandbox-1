@@ -8,4 +8,4 @@ Toy sub-projects are polished here.
 
 * CachingMessageQueue: In-memory caching to block writing threads for as short as possible.```TODO(dkorolev): Link once it's pushed.```
 
-* LinuxFileSystem: Thin wrappers over Linux / POSIX file system, prep for ClientFileStorage.
+* PosixFileSystem: Thin wrappers over POSIX file system, prep for ClientFileStorage. Tested on Linux and MacOS.
