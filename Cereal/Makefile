@@ -1,8 +1,7 @@
 .PHONY: all indent clean check
 
-INCLUDE_PATH=../3party/cereal-1.0.0/include
 CPP=g++
-CPPFLAGS=-std=c++11 -O3 -Wall -I ${INCLUDE_PATH}
+CPPFLAGS=-std=c++11 -O3 -Wall
 LDFLAGS=-pthread -lgflags
 
 PWD=$(shell pwd)
@@ -33,11 +32,8 @@ build/CHECK_OK: build *.h
 		fi \
 	done && echo OK >$@
 
-build: ../3party/cereal-1.0.0
+build:
 	mkdir -p build
-
-../3party/cereal-1.0.0:
-	(cd ../3party; make)
 
 build/%: %.cc *.h
 	${CPP} ${CPPFLAGS} -o $@ $< ${LDFLAGS}

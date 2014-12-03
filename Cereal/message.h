@@ -1,18 +1,12 @@
 #ifndef SANDBOX_CEREAL_MESSAGE_H
 #define SANDBOX_CEREAL_MESSAGE_H
 
-#include "cereal/archives/binary.hpp"
-#include "cereal/archives/portable_binary.hpp"
-#include "cereal/archives/json.hpp"
+#include "../3party/cereal/include/archives/binary.hpp"
+#include "../3party/cereal/include/archives/portable_binary.hpp"
+#include "../3party/cereal/include/archives/json.hpp"
 
-#include "cereal/types/string.hpp"
-
-// TODO(dkorolev): Add these types, as well as many others. Although I have tested those myself.
-
-// #include "cereal/types/vector.hpp"
-// #include "cereal/types/map.hpp"
-
-#include "cereal/types/polymorphic.hpp"
+#include "../3party/cereal/include/types/string.hpp"
+#include "../3party/cereal/include/types/polymorphic.hpp"
 
 // Objects of derived types should be wrapped into a smart pointer to an instance of their base class
 // for cereal to serialize them correcly with the type information encoded.
