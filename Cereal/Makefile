@@ -2,7 +2,7 @@
 
 CPP=g++
 CPPFLAGS=-std=c++11 -O3 -Wall
-LDFLAGS=-pthread -lgflags
+LDFLAGS=-pthread
 
 PWD=$(shell pwd)
 SRC=$(wildcard *.cc)
