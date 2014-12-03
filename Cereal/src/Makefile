@@ -1,6 +1,6 @@
 .PHONY: all indent clean check
 
-INCLUDE_PATH=../3Party/cereal-1.0.0/include
+INCLUDE_PATH=../3party/cereal-1.0.0/include
 CPP=g++
 CPPFLAGS=-std=c++11 -O3 -Wall -I ${INCLUDE_PATH}
 LDFLAGS=-pthread -lgflags
@@ -12,7 +12,7 @@ BIN=$(SRC:%.cc=build/%)
 demo: build build/demo
 	./build/demo
 
-all: build 3Party/cereal-1.0.0 ${BIN}
+all: build ${BIN}
 
 indent:
 	(find . -name "*.cc" ; find . -name "*.h") | xargs clang-format-3.5 -i
@@ -33,8 +33,11 @@ build/CHECK_OK: build *.h
 		fi \
 	done && echo OK >$@
 
-build:
+build: ../3party/cereal-1.0.0
 	mkdir -p build
+
+../3party/cereal-1.0.0:
+	(cd ../3party; make)
 
 build/%: %.cc *.h
 	${CPP} ${CPPFLAGS} -o $@ $< ${LDFLAGS}
