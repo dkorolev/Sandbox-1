@@ -10,49 +10,11 @@
 #include <string>
 #include <thread>
 
-#include "../Bricks/file/file.h"
-#include "../Bricks/time/time.h"
-
-template <typename TIME_SPAN>
-struct QueueStatus {
-  typedef TIME_SPAN T_TIME_SPAN;
-
-  uint64_t appended_file_size;
-  T_TIME_SPAN appended_file_age;
-
-  size_t number_of_queued_files;
-  uint64_t total_queued_files_size;
-  T_TIME_SPAN oldest_queued_file_age;
-};
-
+#include "client_file_storage_types.h"
 #include "client_file_storage_policies.h"
 
-// Parameters for ClientFileStorage.
-template <class PROCESSOR,
-          template <class TIME_MANAGER, class FILE_SYSTEM> class RETRY_POLICY,
-          class FINALIZE_POLICY,
-          class PURGE_POLICY,
-          typename MESSAGE,
-          class FILE_APPEND_POLICY,
-          class TIME_MANAGER,
-          class FILE_SYSTEM>
-struct ClientFileStorageParams {
-#ifdef PARAM
-#error "'PARAM' should not be defined by this point."
-#else
-#define PARAM(type, param)                           \
-  type param;                                        \
-  ClientFileStorageParams& set_##param(type value) { \
-    param = value;                                   \
-    return *this;                                    \
-  }
-  PARAM(std::string, current_filename);
-  PARAM(std::string, committed_filename);  // TODO(dkorolev): Rename this.
-  PARAM(typename TIME_MANAGER::T_TIMESTAMP, max_file_age);
-  PARAM(uint64_t, max_file_size);
-#undef PARAM
-#endif
-};
+#include "../Bricks/file/file.h"
+#include "../Bricks/time/time.h"
 
 // Default initializer invoked from the default constructor of ClientFileStorage.
 // Uses parameters from command-line flags. Requires requires users to

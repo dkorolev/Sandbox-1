@@ -3,7 +3,7 @@
 
 #include <type_traits>
 
-#include "client_file_storage.h"
+#include "client_file_storage_types.h"
 
 #include "../Bricks/dflags/dflags.h"
 

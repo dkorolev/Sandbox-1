@@ -9,7 +9,9 @@
 #include <string>
 #include <thread>
 
-#include "client_file_storage.h"  // Need the definition of QueueStatus.
+#include "client_file_storage_types.h"
+
+#include "../Bricks/time/time.h"
 
 // Default retry policy.
 // Retry after an amount of time drawn from an exponential distribution
