@@ -28,16 +28,16 @@ DEFINE_int64(max_file_size,
 // only support instances of ClientFileStorage that use `uint64_t` as T_TIMESTAMP.
 template <typename T_EXPORTER, typename T_MESSAGE, typename T_TIME_MANAGER, typename T_FILE_MANAGER>
 struct ClientFileStorageParamsFromFlags {
-  static typename std::enable_if<
+  typedef typename std::enable_if<
       std::is_same<typename T_TIME_MANAGER::T_TIMESTAMP, uint64_t>::value,
       typename ClientFileStorage<T_EXPORTER, T_MESSAGE, T_TIME_MANAGER, T_FILE_MANAGER>::Params>::type
-  Construct() {
-    typename ClientFileStorage<T_EXPORTER, T_MESSAGE, T_TIME_MANAGER, T_FILE_MANAGER>::Params params;
-    params.set_current_filename(FLAGS_current_filename)
+      ParamsType;
+  static ParamsType Construct() {
+    return ParamsType()
+        .set_current_filename(FLAGS_current_filename)
         .set_committed_filename(FLAGS_committed_filename)
         .set_max_file_age(FLAGS_max_file_age_ms)
         .set_max_file_size(FLAGS_max_file_size);
-    return params;
   }
 };
 

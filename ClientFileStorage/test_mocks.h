@@ -9,7 +9,7 @@
 struct MockTimeManager final {
  public:
   typedef uint64_t T_TIMESTAMP;
-  MockTimeManager(T_TIMESTAMP ms = 0) : ms(ms) {
+  explicit MockTimeManager(T_TIMESTAMP ms = 0) : ms(ms) {
   }
   T_TIMESTAMP wall_time() const {
     return ms;
