@@ -143,6 +143,7 @@ struct CPPChrono final {
 };
 
 // Policy configuration for ClientFileStorage.
+// User configurations will likely derive from this class and override some types.
 template <typename PROCESSOR>
 struct Config {
   typedef PROCESSOR T_PROCESSOR;
@@ -154,6 +155,9 @@ struct Config {
   typedef JustAppend T_FILE_APPEND_POLICY;
   typedef CPPChrono T_TIME_MANAGER;
   typedef bricks::FileSystem T_FILE_SYSTEM;
+  static bool DetachProcessingThreadOnTermination() {
+    return false;
+  }
 };
 
 #endif  // SANDBOX_CLIENT_FILE_STORAGE_CONFIG_H

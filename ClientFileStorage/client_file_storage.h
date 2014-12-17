@@ -67,7 +67,11 @@ class ClientFileStorage final {
       destructing_ = true;
     }
     condition_variable_.notify_all();
-    exporter_thread_.join();
+    if (T_CONFIG::DetachProcessingThreadOnTermination()) {
+      exporter_thread_.detach();
+    } else {
+      exporter_thread_.join();
+    }
   }
 
   void OnMessage(const T_MESSAGE& message, size_t /*dropped_messages*/) {
