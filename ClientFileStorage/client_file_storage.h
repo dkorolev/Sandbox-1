@@ -11,7 +11,7 @@
 #include <thread>
 
 #include "client_file_storage_types.h"
-#include "client_file_storage_policies.h"
+#include "client_file_storage_config.h"
 
 #include "../Bricks/file/file.h"
 #include "../Bricks/time/time.h"
@@ -22,14 +22,7 @@
 // 2) initialize the flags library with the passed in { argc, argv }.
 // Another option is to not use the default constructor of ClientFileStorage and pass in the params manually.
 // This split is to eliminate the dependency on command line flags, which are not used on mobile devices.
-template <class PROCESSOR,
-          template <class TIME_MANAGER, class FILE_SYSTEM> class RETRY_POLICY,
-          class FINALIZE_POLICY,
-          class PURGE_POLICY,
-          typename MESSAGE,
-          class FILE_APPEND_POLICY,
-          class TIME_MANAGER,
-          class FILE_SYSTEM>
+template <class CONFIG>
 struct ClientFileStorageParamsFromFlags;
 
 // Class ClientFileStorage manages local, filesystem-based message queue.
@@ -39,49 +32,27 @@ struct ClientFileStorageParamsFromFlags;
 // The processor runs in a dedicated thread, and may safely take its time to process the file.
 // If the processor returns so, the file is removed by ClientFileStorage. If the processor
 // returns false, the file is kept and then retried at some point later according to the retry policy.
-template <class PROCESSOR,
-          template <class TIME_MANAGER, class FILE_SYSTEM> class RETRY_POLICY = RetryExponentially,
-          class FINALIZE_POLICY = KeepFilesAround100KBUnlessNoBacklog,
-          class PURGE_POLICY = KeepUnder1GBAndUnder1KFiles,
-          typename MESSAGE = std::string,
-          class FILE_APPEND_POLICY = JustAppend,
-          class TIME_MANAGER = CPPChrono,
-          class FILE_SYSTEM = bricks::FileSystem>
+template <class CONFIG>
 class ClientFileStorage final {
  public:
-  typedef ClientFileStorageParams<PROCESSOR,
-                                  RETRY_POLICY,
-                                  FINALIZE_POLICY,
-                                  PURGE_POLICY,
-                                  MESSAGE,
-                                  FILE_APPEND_POLICY,
-                                  TIME_MANAGER,
-                                  FILE_SYSTEM> Params;
-  typedef PROCESSOR T_PROCESSOR;
-  typedef RETRY_POLICY<TIME_MANAGER, FILE_SYSTEM> T_RETRY_POLICY;
-  typedef FINALIZE_POLICY T_FINALIZE_POLICY;
-  typedef PURGE_POLICY T_PURGE_POLICY;
-  typedef MESSAGE T_MESSAGE;
-  typedef FILE_APPEND_POLICY T_FILE_APPEND_POLICY;
-  typedef TIME_MANAGER T_TIME_MANAGER;
+  typedef CONFIG T_CONFIG;
+  typedef typename T_CONFIG::T_PROCESSOR T_PROCESSOR;
+  template <class TIME_MANAGER, class FILE_SYSTEM>
+  using T_RETRY_POLICY = typename T_CONFIG::template T_RETRY_POLICY<TIME_MANAGER, FILE_SYSTEM>;
+  typedef typename T_CONFIG::T_FINALIZE_POLICY T_FINALIZE_POLICY;
+  typedef typename T_CONFIG::T_PURGE_POLICY T_PURGE_POLICY;
+  typedef typename T_CONFIG::T_MESSAGE T_MESSAGE;
+  typedef typename T_CONFIG::T_FILE_APPEND_POLICY T_FILE_APPEND_POLICY;
+  typedef typename T_CONFIG::T_TIME_MANAGER T_TIME_MANAGER;
   typedef typename T_TIME_MANAGER::T_TIMESTAMP T_TIMESTAMP;
-  typedef FILE_SYSTEM T_FILE_SYSTEM;
+  typedef typename T_CONFIG::T_FILE_SYSTEM T_FILE_SYSTEM;
 
-  static Params FromFlags() {
-    return ClientFileStorageParamsFromFlags<PROCESSOR,
-                                            RETRY_POLICY,
-                                            FINALIZE_POLICY,
-                                            PURGE_POLICY,
-                                            MESSAGE,
-                                            FILE_APPEND_POLICY,
-                                            TIME_MANAGER,
-                                            FILE_SYSTEM>::Construct();
-  }
+  typedef ClientFileStorageParams<T_CONFIG> params_type;
 
   ClientFileStorage(T_PROCESSOR& exporter,
                     T_TIME_MANAGER& time_manager,
                     T_FILE_SYSTEM& file_system,
-                    Params params = FromFlags())
+                    params_type params = ClientFileStorageParamsFromFlags<T_CONFIG>::Construct())
       : params_(params),
         exporter_(exporter),
         time_manager_(time_manager),
@@ -151,7 +122,7 @@ class ClientFileStorage final {
     }
   }
 
-  Params params_;
+  params_type params_;
   T_PROCESSOR& exporter_;
   T_TIME_MANAGER& time_manager_;
   T_FILE_SYSTEM& file_system_;

@@ -1,7 +1,7 @@
 // TODO(dkorolev): Rename this file.
 
-#ifndef SANDBOX_CLIENT_FILE_STORAGE_POLICIES_H
-#define SANDBOX_CLIENT_FILE_STORAGE_POLICIES_H
+#ifndef SANDBOX_CLIENT_FILE_STORAGE_CONFIG_H
+#define SANDBOX_CLIENT_FILE_STORAGE_CONFIG_H
 
 #include <chrono>
 #include <condition_variable>
@@ -11,6 +11,7 @@
 
 #include "client_file_storage_types.h"
 
+#include "../Bricks/file/file.h"
 #include "../Bricks/time/time.h"
 
 // Default retry policy.
@@ -141,4 +142,18 @@ struct CPPChrono final {
   }
 };
 
-#endif  // SANDBOX_CLIENT_FILE_STORAGE_POLICIES_H
+// Policy configuration for ClientFileStorage.
+template <typename PROCESSOR>
+struct Config {
+  typedef PROCESSOR T_PROCESSOR;
+  template <class TIME_MANAGER, class FILE_SYSTEM>
+  using T_RETRY_POLICY = RetryExponentially<TIME_MANAGER, FILE_SYSTEM>;
+  typedef KeepFilesAround100KBUnlessNoBacklog T_FINALIZE_POLICY;
+  typedef KeepUnder1GBAndUnder1KFiles T_PURGE_POLICY;
+  typedef std::string T_MESSAGE;
+  typedef JustAppend T_FILE_APPEND_POLICY;
+  typedef CPPChrono T_TIME_MANAGER;
+  typedef bricks::FileSystem T_FILE_SYSTEM;
+};
+
+#endif  // SANDBOX_CLIENT_FILE_STORAGE_CONFIG_H

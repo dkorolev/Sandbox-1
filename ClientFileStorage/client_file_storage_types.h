@@ -3,7 +3,7 @@
 
 #include <string>
 
-// The status of the queue.
+// The status of ClientFileStorage file queue.
 template <typename TIME_SPAN>
 struct QueueStatus {
   typedef TIME_SPAN T_TIME_SPAN;
@@ -17,14 +17,7 @@ struct QueueStatus {
 };
 
 // Parameters for ClientFileStorage.
-template <class PROCESSOR,
-          template <class TIME_MANAGER, class FILE_SYSTEM> class RETRY_POLICY,
-          class FINALIZE_POLICY,
-          class PURGE_POLICY,
-          typename MESSAGE,
-          class FILE_APPEND_POLICY,
-          class TIME_MANAGER,
-          class FILE_SYSTEM>
+template <class CONFIG>
 struct ClientFileStorageParams {
 #ifdef PARAM
 #error "'PARAM' should not be defined by this point."
@@ -37,7 +30,7 @@ struct ClientFileStorageParams {
   }
   PARAM(std::string, current_filename);
   PARAM(std::string, committed_filename);  // TODO(dkorolev): Rename this.
-  PARAM(typename TIME_MANAGER::T_TIMESTAMP, max_file_age);
+  PARAM(typename CONFIG::TIME_MANAGER::T_TIMESTAMP, max_file_age);
   PARAM(uint64_t, max_file_size);
 #undef PARAM
 #endif
