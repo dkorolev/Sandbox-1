@@ -5,8 +5,7 @@
 
 #include "client_file_storage.h"
 
-// TODO(dkorolev): Migrate to header-only gflags.
-#include <gflags/gflags.h>
+#include "../Bricks/dflags/dflags.h"
 
 DEFINE_string(current_filename,
               "current",

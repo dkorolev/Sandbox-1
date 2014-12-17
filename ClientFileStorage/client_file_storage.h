@@ -78,7 +78,7 @@ class ClientFileStorage final {
     exporter_thread_.join();
   }
 
-  void OnMessage(const T_MESSAGE& message, size_t dropped_messages) {
+  void OnMessage(const T_MESSAGE& message, size_t /*dropped_messages*/) {
     const T_TIMESTAMP timestamp = time_manager_.wall_time();
     ValidateCurrentFile(message.size(), timestamp);
     file_manager_.AppendToFile(current_filename_, message);

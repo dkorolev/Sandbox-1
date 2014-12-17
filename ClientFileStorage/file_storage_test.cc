@@ -10,8 +10,8 @@
 #include "client_file_storage.h"
 #include "client_file_storage_flags.h"  // Test the command-line flags parsing sub-module as well.
 
-// TODO(dkorolev): Migrate to a header-only gtest.
-#include "gtest/gtest.h"
+#include "../Bricks/3party/gtest/gtest.h"
+#include "../Bricks/3party/gtest/gtest-main-with-dflags.h"
 
 #include "test_mocks.h"
 
@@ -76,12 +76,3 @@ TEST(ClientFileStorageTest, RenamedFileBecauseOfAge) {
 // TODO(dkorolev): Timestamps in file names.
 // TODO(dkorolev): Rename the current file right away if it's too old.
 // TODO(dkorolev): Update the timestamp to an older one in case time goes backwards to avoid large files.
-
-// TODO(dkorolev): /usr/src/gtest/libgtest_main.a 1) does not parse flags, and 2) is not header_only.
-int main(int argc, char** argv) {
-  testing::InitGoogleTest(&argc, argv);
-  if (!google::ParseCommandLineFlags(&argc, &argv, true)) {
-    return -1;
-  }
-  return RUN_ALL_TESTS();
-}

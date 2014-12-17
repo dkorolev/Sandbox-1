@@ -1,8 +1,8 @@
 .PHONY: test all indent clean check
 
 CPP=g++
-CPPFLAGS=-std=c++11 -O3 -Wall
-LDFLAGS=-pthread -lgflags -lgflags
+CPPFLAGS=-std=c++11 -Wall -W
+LDFLAGS=-pthread
 
 PWD=$(shell pwd)
 SRC=$(wildcard *.cc)
@@ -37,5 +37,4 @@ build:
 	mkdir -p build
 
 build/%: %.cc *.h
-	# TODO(dkorolev): Get rid of Google dependencies here.
-	${CPP} ${CPPFLAGS} -o $@ $< /usr/src/gtest/libgtest.a ${LDFLAGS}
+	${CPP} ${CPPFLAGS} -o $@ $< ${LDFLAGS}
