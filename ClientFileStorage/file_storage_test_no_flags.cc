@@ -5,6 +5,8 @@
 #include "../Bricks/3party/gtest/gtest.h"
 #include "../Bricks/3party/gtest/gtest-main.h"
 
+/*
+
 TEST(ClientFileStorage, CompilesWithoutFlagsWithExplicitParamsProvided) {
   MockExporter exporter;
   MockTimeManager clock;
@@ -21,3 +23,5 @@ TEST(ClientFileStorage, CompilesWithoutFlagsWithExplicitParamsProvided) {
   EXPECT_EQ(1, fs.NumberOfFiles());
   EXPECT_EQ("one\ntwo\n", fs.FileContents("meh"));
 }
+
+*/

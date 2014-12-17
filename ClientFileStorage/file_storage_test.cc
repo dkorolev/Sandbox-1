@@ -15,6 +15,8 @@
 
 #include "test_mocks.h"
 
+/*
+
 TEST(ClientFileStorageTest, KeepsSameFile) {
   FLAGS_current_filename = "KeepsSameFile";  // TODO(dkorolev): Timestamp the filename.
   FLAGS_max_file_age_ms = 1000;
@@ -76,3 +78,5 @@ TEST(ClientFileStorageTest, RenamedFileBecauseOfAge) {
 // TODO(dkorolev): Timestamps in file names.
 // TODO(dkorolev): Rename the current file right away if it's too old.
 // TODO(dkorolev): Update the timestamp to an older one in case time goes backwards to avoid large files.
+
+*/

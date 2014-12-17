@@ -25,15 +25,29 @@ DEFINE_int64(max_file_size,
              "Start a new file after this size of the current one exceeds this. Defaults to 256KB.");
 
 // Since `class ClientFileStorage` is timestamp-type-agnostic, while flags assume milliseconds,
-// only support instances of ClientFileStorage that use `uint64_t` as T_TIMESTAMP.
-template <typename T_EXPORTER, typename T_MESSAGE, typename T_TIME_MANAGER, typename T_FILE_MANAGER>
+// only support instances of ClientFileStorage that use `bricks::time::UNIX_TIME_MILLISECONDS` as T_TIMESTAMP.
+template <class PROCESSOR,
+          template <class TIME_MANAGER, class FILE_SYSTEM> class RETRY_POLICY,
+          class FINALIZE_POLICY,
+          class PURGE_POLICY,
+          typename MESSAGE,
+          class FILE_APPEND_POLICY,
+          class TIME_MANAGER,
+          class FILE_SYSTEM>
 struct ClientFileStorageParamsFromFlags {
-  typedef typename std::enable_if<
-      std::is_same<typename T_TIME_MANAGER::T_TIMESTAMP, uint64_t>::value,
-      typename ClientFileStorage<T_EXPORTER, T_MESSAGE, T_TIME_MANAGER, T_FILE_MANAGER>::Params>::type
-      ParamsType;
-  static ParamsType Construct() {
-    return ParamsType()
+  typedef ClientFileStorageParams<PROCESSOR,
+                                  RETRY_POLICY,
+                                  FINALIZE_POLICY,
+                                  PURGE_POLICY,
+                                  MESSAGE,
+                                  FILE_APPEND_POLICY,
+                                  TIME_MANAGER,
+                                  FILE_SYSTEM> Params;
+  static typename std::enable_if<
+      std::is_same<typename TIME_MANAGER::T_TIMESTAMP, bricks::time::UNIX_TIME_MILLISECONDS>::value,
+      Params>::type
+  Construct() {
+    return Params()
         .set_current_filename(FLAGS_current_filename)
         .set_committed_filename(FLAGS_committed_filename)
         .set_max_file_age(FLAGS_max_file_age_ms)
