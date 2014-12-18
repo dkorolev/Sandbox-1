@@ -1,13 +1,7 @@
-// TODO(dkorolev): Rename this file.
-
 #ifndef FSQ_CONFIG_H
 #define FSQ_CONFIG_H
 
-#include <chrono>
-#include <condition_variable>
-#include <mutex>
 #include <string>
-#include <thread>
 
 #include "fsq_types.h"
 
@@ -16,9 +10,13 @@
 
 namespace fsq {
 
-// Default retry policy.
-// Retry after an amount of time drawn from an exponential distribution
+namespace policy {
+
+// Default retry policy for file processing.
+// On success, runs at full speed without any delays.
+// On failure, retries after an amount of time drawn from an exponential distribution
 // with the mean defaulting to 15 minutes, min defaulting to 1 minute and max defaulting to 24 hours.
+// On forced retry and failure updates the delay keeping the max of { current, newly suggested }.
 // Handles time skews correctly.
 template <typename TIME_MANAGER_FOR_RETRY_POLICY, typename FILE_SYSTEM_FOR_RETRY_POLICY>
 class RetryExponentially {
@@ -93,6 +91,8 @@ class RetryExponentially {
 };
 
 // Default file finalization policy.
+// Does what the name says: Keeps files around 100KB, unless there is no backlog,
+// in which case files are finalized sooner for reduced processing latency.
 struct KeepFilesAround100KBUnlessNoBacklog {
   typedef bricks::time::MILLISECONDS_INTERVAL DELTA_MS;
   // The default implementation only supports MILLISECOND as timestamps.
@@ -114,6 +114,7 @@ struct KeepFilesAround100KBUnlessNoBacklog {
 };
 
 // Default file purge policy.
+// Does what the name says: Keeps under 1'000 files of under 1GB total volume.
 struct KeepUnder1GBAndUnder1KFiles {
   bool ShouldPurge(const QueueStatus<bricks::time::UNIX_TIME_MILLISECONDS>& status) const {
     if (status.total_queued_files_size + status.appended_file_size > 1024 * 1024 * 1024) {
@@ -130,7 +131,7 @@ struct KeepUnder1GBAndUnder1KFiles {
 };
 
 // Default file append policy.
-// Just append without any separators.
+// Appends data to files in raw format, without separators.
 struct JustAppend {
   // Appends data to file with no strings attached.
 };
@@ -144,18 +145,20 @@ struct CPPChrono final {
   }
 };
 
+}  // namespace policy
+
 // Policy configuration for FSQ.
 // User configurations will likely derive from this class and override some types.
 template <typename PROCESSOR>
 struct Config {
   typedef PROCESSOR T_PROCESSOR;
   template <class TIME_MANAGER, class FILE_SYSTEM>
-  using T_RETRY_POLICY = RetryExponentially<TIME_MANAGER, FILE_SYSTEM>;
-  typedef KeepFilesAround100KBUnlessNoBacklog T_FINALIZE_POLICY;
-  typedef KeepUnder1GBAndUnder1KFiles T_PURGE_POLICY;
+  using T_RETRY_POLICY = policy::RetryExponentially<TIME_MANAGER, FILE_SYSTEM>;
+  typedef policy::KeepFilesAround100KBUnlessNoBacklog T_FINALIZE_POLICY;
+  typedef policy::KeepUnder1GBAndUnder1KFiles T_PURGE_POLICY;
   typedef std::string T_MESSAGE;
-  typedef JustAppend T_FILE_APPEND_POLICY;
-  typedef CPPChrono T_TIME_MANAGER;
+  typedef policy::JustAppend T_FILE_APPEND_POLICY;
+  typedef policy::CPPChrono T_TIME_MANAGER;
   typedef bricks::FileSystem T_FILE_SYSTEM;
   static bool DetachProcessingThreadOnTermination() {
     return false;

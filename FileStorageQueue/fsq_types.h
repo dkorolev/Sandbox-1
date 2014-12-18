@@ -24,16 +24,14 @@ struct FSQParams {
 #ifdef PARAM
 #error "'PARAM' should not be defined by this point."
 #else
-#define PARAM(type, param)                           \
-  type param;                                        \
+#define PARAM(type, param)             \
+  type param;                          \
   FSQParams& set_##param(type value) { \
-    param = value;                                   \
-    return *this;                                    \
+    param = value;                     \
+    return *this;                      \
   }
   PARAM(std::string, current_filename);
-  PARAM(std::string, committed_filename);  // TODO(dkorolev): Rename this.
-  PARAM(typename CONFIG::TIME_MANAGER::T_TIMESTAMP, max_file_age);
-  PARAM(uint64_t, max_file_size);
+  PARAM(std::string, committed_filename);
 #undef PARAM
 #endif
 };
