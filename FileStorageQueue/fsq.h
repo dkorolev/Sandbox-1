@@ -1,4 +1,3 @@
-// TODO(dkorolev): Rename this file and classes.
 // TODO(dkorolev): Ensure that the directory is scanned from within a dedicated thread.
 
 #ifndef FSQ_H
