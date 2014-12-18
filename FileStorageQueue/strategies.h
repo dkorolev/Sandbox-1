@@ -193,7 +193,7 @@ class AppendToFileWithSeparator {
 struct UseUNIXTimeInMilliseconds final {
   typedef bricks::time::UNIX_TIME_MILLISECONDS T_TIMESTAMP;
   typedef bricks::time::MILLISECONDS_INTERVAL T_TIME_SPAN;
-  T_TIMESTAMP MockableNow() const {
+  T_TIMESTAMP Now() const {
     return bricks::time::Now();
   }
 };

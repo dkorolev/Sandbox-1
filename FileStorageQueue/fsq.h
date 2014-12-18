@@ -72,9 +72,9 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   typedef QueueStatus<T_TIMESTAMP, T_TIME_SPAN> Status;
 
   FSQ(T_PROCESSOR& processor,
-      T_TIME_MANAGER& time_manager,
-      T_FILE_SYSTEM& file_system,
-      const std::string& working_directory)
+      const std::string& working_directory,
+      const T_TIME_MANAGER& time_manager = T_TIME_MANAGER(),
+      const T_FILE_SYSTEM& file_system = T_FILE_SYSTEM())
       : processor_(processor),
         time_manager_(time_manager),
         file_system_(file_system),
@@ -121,7 +121,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
     if (current_file_.get()) {
       current_file_.reset(nullptr);
       status_.appended_file_size = 0;
-      status_.appended_file_age = 0;
+      status_.appended_file_age = T_TIME_SPAN(0);
       const std::string finalized_file_name =
           working_directory_ + '/' +
           T_FILE_NAMING_STRATEGY::GenerateFinalizedFileName(current_file_creation_time_);
@@ -129,9 +129,9 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       current_file_name_.clear();
     }
     {
-        std::unique_lock<std::mutex> lock(mutex_);
-        has_new_file_ = true;
-        condition_variable_.notify_all();
+      std::unique_lock<std::mutex> lock(mutex_);
+      has_new_file_ = true;
+      condition_variable_.notify_all();
     }
   }
 
@@ -192,7 +192,6 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
         if (!has_new_file_) {
           condition_variable_.wait(lock);
         }
-
       }
 
       {
@@ -223,8 +222,8 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   Status status_;
 
   T_PROCESSOR& processor_;
-  T_TIME_MANAGER& time_manager_;
-  T_FILE_SYSTEM& file_system_;
+  const T_TIME_MANAGER& time_manager_;
+  const T_FILE_SYSTEM& file_system_;
   std::string working_directory_;
 
   std::unique_ptr<typename T_FILE_SYSTEM::OutputFile> current_file_;

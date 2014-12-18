@@ -54,7 +54,7 @@ TEST(FileSystemQueueTest, SimpleSmokeTest) {
   MockProcessor processor;
   MockTime time_manager;
   bricks::FileSystem file_system;
-  FSQ fsq(processor, time_manager, file_system, kTestDir);
+  FSQ fsq(processor, kTestDir, time_manager, file_system);
   fsq.SetSeparator("\n");
 
   // Confirm the queue is empty.
