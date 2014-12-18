@@ -1,82 +1,106 @@
-// TODO(dkorolev): Make sure this test passes with both MockFileManager and PosixFileManager.
-// The latter would require the Makefile `test` target to wipe out the tmp dir, also add it to .gitignore.
-
-// TODO(dkorolev): How do we handle filesystem exceptions?
-
-#include <exception>
-#include <map>
-#include <string>
+#include <atomic>
 
 #include "fsq.h"
-#include "fsq_flags.h"  // Test the command-line flags parsing sub-module as well.
+
+#include "../Bricks/file/file.h"
 
 #include "../Bricks/3party/gtest/gtest.h"
-#include "../Bricks/3party/gtest/gtest-main-with-dflags.h"
+#include "../Bricks/3party/gtest/gtest-main.h"
 
-#include "test_mocks.h"
+using std::string;
+using std::atomic_bool;
+
+const char* const kTestDir = "build/";
+
+struct MockProcessor {
+  MockProcessor() : updated(false) {
+  }
+  template <typename T_TIMESTAMP, typename T_TIME_SPAN>
+  fsq::FileProcessingResult OnFileReady(const std::string& file_name,
+                                        const std::string& file_base_name,
+                                        uint64_t /*size*/,
+                                        T_TIMESTAMP /*created*/,
+                                        T_TIME_SPAN /*age*/,
+                                        T_TIMESTAMP /*now*/) {
+    filename = file_base_name;
+    contents = bricks::ReadFileAsString(file_name);
+    updated = true;
+    return fsq::FileProcessingResult::Success;
+  }
+
+  atomic_bool updated;
+  string filename = "";
+  string contents = "";
+};
+
+struct MockTime {
+  typedef uint64_t T_TIMESTAMP;
+  typedef int64_t T_TIME_SPAN;
+  uint64_t now = 0;
+  T_TIMESTAMP Now() const {
+    return now;
+  }
+};
+
+struct MockConfig : fsq::Config<MockProcessor> {
+  typedef MockTime T_TIME_MANAGER;
+  typedef fsq::strategy::AppendToFileWithSeparator T_FILE_APPEND_POLICY;
+};
+
+typedef fsq::FSQ<MockConfig> FSQ;
+
+TEST(FileSystemQueueTest, SimpleSmokeTest) {
+  // A simple way to create and initialize FileSystemQueue ("FSQ").
+  MockProcessor processor;
+  MockTime time_manager;
+  bricks::FileSystem file_system;
+  FSQ fsq(processor, time_manager, file_system, kTestDir);
+  fsq.SetSeparator("\n");
+
+  // Confirm the queue is empty.
+  EXPECT_EQ(0ull, fsq.GetQueueStatus().appended_file_size);
+  EXPECT_EQ(0ll, fsq.GetQueueStatus().appended_file_age);
+  EXPECT_EQ(0u, fsq.GetQueueStatus().number_of_queued_files);
+  EXPECT_EQ(0ul, fsq.GetQueueStatus().total_queued_files_size);
+  EXPECT_EQ(0ll, fsq.GetQueueStatus().oldest_queued_file_age);
+
+  // Add a few entries.
+  time_manager.now = 1001;
+  fsq.PushMessage("foo");
+  time_manager.now = 1002;
+  fsq.PushMessage("bar");
+  time_manager.now = 1003;
+  fsq.PushMessage("baz");
+  time_manager.now = 1010;
+
+  // Confirm the queue is empty.
+  EXPECT_EQ(12ull, fsq.GetQueueStatus().appended_file_size);  // Three messages of (3 + '\n') bytes each.
+  EXPECT_EQ(2ll, fsq.GetQueueStatus().appended_file_age);     // 1003 - 1001.
+  EXPECT_EQ(0u, fsq.GetQueueStatus().number_of_queued_files);
+  EXPECT_EQ(0ul, fsq.GetQueueStatus().total_queued_files_size);
+  EXPECT_EQ(0ll, fsq.GetQueueStatus().oldest_queued_file_age);
+
+  // Force entries processing to have three freshly added ones reach our MockProcessor.
+  fsq.ForceResumeProcessing();
+  while (!processor.updated) {
+    ;  // Spin lock.
+  }
+
+  EXPECT_EQ("finalized-00000000000000001001.bin", processor.filename);
+  EXPECT_EQ("foo\nbar\nbaz\n", processor.contents);
+}
 
 /*
 
-TEST(ClientFileStorageTest, KeepsSameFile) {
-  FLAGS_current_filename = "KeepsSameFile";  // TODO(dkorolev): Timestamp the filename.
-  FLAGS_max_file_age_ms = 1000;
-  FLAGS_max_file_size = 1000;
-  MockExporter exporter;
-  MockTimeManager clock;
-  MockFileManager fs;
-  ClientFileStorage<MockExporter, std::string, MockTimeManager, MockFileManager> storage(exporter, clock, fs);
-  clock.ms = 100;
-  storage.OnMessage("foo one\n", 0);
-  clock.ms = 200;
-  storage.OnMessage("foo two\n", 0);
-  EXPECT_EQ(1, fs.NumberOfFiles());
-  EXPECT_EQ("foo one\nfoo two\n", fs.FileContents("KeepsSameFile"));
-}
-
-TEST(ClientFileStorageTest, RenamedFileBecauseOfSize) {
-  FLAGS_current_filename = "RenamedFileBecauseOfSize";      // TODO(dkorolev): Timestamp the filename.
-  FLAGS_committed_filename = "CommittedFileBecauseOfSize";  // TODO(dkorolev): Timestamp the filename.
-  FLAGS_max_file_age_ms = 1000;
-  FLAGS_max_file_size = 20;
-  MockExporter exporter;
-  MockTimeManager clock(0);
-  MockFileManager fs;
-  ClientFileStorage<MockExporter, std::string, MockTimeManager, MockFileManager> storage(exporter, clock, fs);
-  clock.ms = 100;
-  storage.OnMessage("bar one\n", 0);
-  clock.ms = 200;
-  storage.OnMessage("bar two\n", 0);
-  clock.ms = 300;
-  storage.OnMessage("bar three\n", 0);
-  EXPECT_EQ(2, fs.NumberOfFiles());
-  EXPECT_EQ("bar one\nbar two\n", fs.FileContents("CommittedFileBecauseOfSize"));
-  EXPECT_EQ("bar three\n", fs.FileContents("RenamedFileBecauseOfSize"));
-}
-
-TEST(ClientFileStorageTest, RenamedFileBecauseOfAge) {
-  FLAGS_current_filename = "RenamedFileBecauseOfAge";      // TODO(dkorolev): Timestamp the filename.
-  FLAGS_committed_filename = "CommittedFileBecauseOfAge";  // TODO(dkorolev): Timestamp the filename.
-  FLAGS_max_file_age_ms = 150;
-  FLAGS_max_file_size = 1000;
-  MockExporter exporter;
-  MockTimeManager clock(0);
-  MockFileManager fs;
-  ClientFileStorage<MockExporter, std::string, MockTimeManager, MockFileManager> storage(exporter, clock, fs);
-  clock.ms = 100;
-  storage.OnMessage("baz one\n", 0);
-  clock.ms = 200;
-  storage.OnMessage("baz two\n", 0);
-  clock.ms = 300;
-  storage.OnMessage("baz three\n", 0);
-  EXPECT_EQ(2, fs.NumberOfFiles());
-  EXPECT_EQ("baz one\nbaz two\n", fs.FileContents("CommittedFileBecauseOfAge"));
-  EXPECT_EQ("baz three\n", fs.FileContents("RenamedFileBecauseOfAge"));
-}
-
-// TODO(dkorolev): Remove files as they are sent, EXPECT contents of already removed files.
-// TODO(dkorolev): Scan the directory on startup.
-// TODO(dkorolev): Timestamps in file names.
-// TODO(dkorolev): Rename the current file right away if it's too old.
-// TODO(dkorolev): Update the timestamp to an older one in case time goes backwards to avoid large files.
+TEST(FileSystemQueueTest, KeepsSameFile);
+TEST(FileSystemQueueTest, RenamedFileBecauseOfSize);
+TEST(FileSystemQueueTest, RenamedFileBecauseOfAge);
+TEST(FileSystemQueueTest, Scan the directory on startup.);
+TEST(FileSystemQueueTest, Resume already existing append-only file.);
+TEST(FileSystemQueueTest, Correctly extract timestamps from all the files, including the temporary one.);
+TEST(FileSystemQueueTest, Rename the current file right away if it should be renamed, before any work.);
+TEST(FileSystemQueueTest, Time skew.);
+TEST(FileSystemQueueTest, Custom finalize strategy.);
+TEST(FileSystemQueueTest, Custom append strategy.);
 
 */

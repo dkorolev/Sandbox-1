@@ -1,28 +1,55 @@
-#ifndef FSQ_CONFIG_H
-#define FSQ_CONFIG_H
+#ifndef FSQ_STRATEGIES_H
+#define FSQ_STRATEGIES_H
 
 #include <string>
 
-#include "fsq_types.h"
-
+#include "../Bricks/util/util.h"
 #include "../Bricks/file/file.h"
 #include "../Bricks/time/time.h"
+#include "../Bricks/strings/fixed_size_serializer.h"
 
 namespace fsq {
+namespace strategy {
 
-namespace policy {
+// Default file naming strategy.
+// ***** !!!!! *****
+// TODO(dkorolev): Tweak it.
+// ***** !!!!! *****
+const char kFinalizedPrefix[] = "finalized-";
+const char kFinalizedSuffix[] = ".bin";
+const size_t kFinalizedPrefixLength = bricks::CompileTimeStringLength(kFinalizedPrefix);
+const size_t kFinalizedSuffixLength = bricks::CompileTimeStringLength(kFinalizedSuffix);
 
-// Default retry policy for file processing.
+struct DummyFileNamingToUnblockAlexFromMinsk {
+  template <typename T_TIMESTAMP>
+  inline static std::string GenerateCurrentFileName(const T_TIMESTAMP timestamp) {
+    return "current-" + bricks::strings::PackToString(timestamp) + ".bin";
+  }
+  template <typename T_TIMESTAMP>
+  inline static std::string GenerateFinalizedFileName(const T_TIMESTAMP timestamp) {
+    return kFinalizedPrefix + bricks::strings::PackToString(timestamp) + kFinalizedSuffix;
+  }
+  template <typename T_TIMESTAMP>
+  inline static bool IsFinalizedFileName(const std::string& filename) {
+    // TODO(dkorolev): Get a bit smarter here.
+    return (filename.length() ==
+            kFinalizedPrefixLength + bricks::strings::FixedSizeSerializer<T_TIMESTAMP>::size_in_bytes +
+                kFinalizedSuffixLength) &&
+           filename.substr(0, kFinalizedPrefixLength) == kFinalizedPrefix;
+  }
+};
+
+// Default retry strategy for file processing.
 // On success, runs at full speed without any delays.
 // On failure, retries after an amount of time drawn from an exponential distribution
 // with the mean defaulting to 15 minutes, min defaulting to 1 minute and max defaulting to 24 hours.
 // On forced retry and failure updates the delay keeping the max of { current, newly suggested }.
 // Handles time skews correctly.
-template <typename TIME_MANAGER_FOR_RETRY_POLICY, typename FILE_SYSTEM_FOR_RETRY_POLICY>
+template <typename TIME_MANAGER_FOR_RETRY_STRATEGY, typename FILE_SYSTEM_FOR_RETRY_STRATEGY>
 class RetryExponentially {
  public:
-  typedef TIME_MANAGER_FOR_RETRY_POLICY T_TIME_MANAGER;
-  typedef FILE_SYSTEM_FOR_RETRY_POLICY T_FILE_SYSTEM;
+  typedef TIME_MANAGER_FOR_RETRY_STRATEGY T_TIME_MANAGER;
+  typedef FILE_SYSTEM_FOR_RETRY_STRATEGY T_FILE_SYSTEM;
   struct Params {
     double mean, min, max;
     Params(double mean, double min, double max) : mean(mean), min(min), max(max) {
@@ -49,7 +76,7 @@ class RetryExponentially {
                               const double max = 24 * 60 * 60 * 1e3)
       : RetryExponentially(time_manager, file_system, Params(mean, min, max)) {
   }
-  void AttachToFile(const std::string filename) {
+  void AttachToFile(const std::string /*filename*/) {
     // Serializes and deserializes itself into a file, used to preserve retry delays between restarts.
     // TODO(dkorolev): Support other means like CoreData, or stick with a file?
   }
@@ -90,13 +117,14 @@ class RetryExponentially {
   const Params params_;
 };
 
-// Default file finalization policy.
+// Default file finalization strategy.
 // Does what the name says: Keeps files around 100KB, unless there is no backlog,
 // in which case files are finalized sooner for reduced processing latency.
 struct KeepFilesAround100KBUnlessNoBacklog {
+  typedef bricks::time::UNIX_TIME_MILLISECONDS ABSOLUTE_MS;
   typedef bricks::time::MILLISECONDS_INTERVAL DELTA_MS;
   // The default implementation only supports MILLISECOND as timestamps.
-  bool ShouldFinalize(const QueueStatus<DELTA_MS>& status) const {
+  bool ShouldFinalize(const QueueStatus<ABSOLUTE_MS, DELTA_MS>& status) const {
     if (status.appended_file_size >= 100 * 1024 * 1024 ||
         status.appended_file_age > DELTA_MS(24 * 60 * 60 * 1000)) {
       // Always keep files of at most 100KB and at most 24 hours old.
@@ -106,17 +134,18 @@ struct KeepFilesAround100KBUnlessNoBacklog {
       return false;
     } else {
       // Otherwise, there are no files pending processing no queue,
-      // and the default policy can be legitimately expected to keep finalizing files somewhat often.
+      // and the default strategy can be legitimately expected to keep finalizing files somewhat often.
       return (status.appended_file_size >= 10 * 1024 * 1024 ||
               status.appended_file_age > DELTA_MS(10 * 60 * 1000));
     }
   }
 };
 
-// Default file purge policy.
+// Default file purge strategy.
 // Does what the name says: Keeps under 1'000 files of under 1GB total volume.
 struct KeepUnder1GBAndUnder1KFiles {
-  bool ShouldPurge(const QueueStatus<bricks::time::UNIX_TIME_MILLISECONDS>& status) const {
+  bool ShouldPurge(const QueueStatus<bricks::time::UNIX_TIME_MILLISECONDS, bricks::time::MILLISECONDS_INTERVAL>&
+                       status) const {
     if (status.total_queued_files_size + status.appended_file_size > 1024 * 1024 * 1024) {
       // Purge the oldest queued files if the total size of data stored in the queue exceeds 1GB.
       return true;
@@ -130,41 +159,46 @@ struct KeepUnder1GBAndUnder1KFiles {
   }
 };
 
-// Default file append policy.
+// Default file append strategy.
 // Appends data to files in raw format, without separators.
-struct JustAppend {
-  // Appends data to file with no strings attached.
+struct JustAppendToFile {
+  void AppendToFile(bricks::FileSystem::OutputFile& fo, const std::string& message) const {
+    // TODO(dkorolev): Should we flush each record? Make it part of the strategy?
+    fo << message << std::flush;
+  }
+  uint64_t MessageSizeInBytes(const std::string& message) const {
+    return message.length();
+  }
 };
 
-// Default time policy.
-// Use UNIX time as milliseconds.
-struct CPPChrono final {
+// Another simple file append strategy: Append messages adding a separator after each of them.
+class AppendToFileWithSeparator {
+ public:
+  void AppendToFile(bricks::FileSystem::OutputFile& fo, const std::string& message) const {
+    // TODO(dkorolev): Should we flush each record? Make it part of the strategy?
+    fo << message << separator_ << std::flush;
+  }
+  uint64_t MessageSizeInBytes(const std::string& message) const {
+    return message.length() + separator_.length();
+  }
+  void SetSeparator(const std::string& separator) {
+    separator_ = separator;
+  }
+
+ private:
+  std::string separator_ = "";
+};
+
+// Default time strategy: Use UNIX time in milliseconds.
+struct UseUNIXTimeInMilliseconds final {
   typedef bricks::time::UNIX_TIME_MILLISECONDS T_TIMESTAMP;
+  typedef bricks::time::MILLISECONDS_INTERVAL T_TIME_SPAN;
   T_TIMESTAMP MockableNow() const {
     return bricks::time::Now();
   }
 };
 
-}  // namespace policy
-
-// Policy configuration for FSQ.
-// User configurations will likely derive from this class and override some types.
-template <typename PROCESSOR>
-struct Config {
-  typedef PROCESSOR T_PROCESSOR;
-  template <class TIME_MANAGER, class FILE_SYSTEM>
-  using T_RETRY_POLICY = policy::RetryExponentially<TIME_MANAGER, FILE_SYSTEM>;
-  typedef policy::KeepFilesAround100KBUnlessNoBacklog T_FINALIZE_POLICY;
-  typedef policy::KeepUnder1GBAndUnder1KFiles T_PURGE_POLICY;
-  typedef std::string T_MESSAGE;
-  typedef policy::JustAppend T_FILE_APPEND_POLICY;
-  typedef policy::CPPChrono T_TIME_MANAGER;
-  typedef bricks::FileSystem T_FILE_SYSTEM;
-  static bool DetachProcessingThreadOnTermination() {
-    return false;
-  }
-};
-
+}  // namespace strategy
 }  // namespace fsq
 
-#endif  // FSQ_CONFIG_H
+#endif  // FSQ_STRATEGIES_H

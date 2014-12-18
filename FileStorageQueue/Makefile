@@ -9,8 +9,7 @@ SRC=$(wildcard *.cc)
 BIN=$(SRC:%.cc=build/%)
 
 test: all
-	./build/file_storage_test
-	./build/file_storage_test_no_flags
+	./build/test
 
 all: build ${BIN}
 
