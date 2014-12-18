@@ -1,9 +1,9 @@
-#ifndef SANDBOX_CLIENT_FILE_STORAGE_FLAGS_H
-#define SANDBOX_CLIENT_FILE_STORAGE_FLAGS_H
+#ifndef FSQ_FLAGS_H
+#define FSQ_FLAGS_H
 
 #include <type_traits>
 
-#include "client_file_storage_types.h"
+#include "fsq_types.h"
 
 #include "../Bricks/dflags/dflags.h"
 
@@ -24,12 +24,14 @@ DEFINE_int64(max_file_size,
              1024 * 1024 * 256,
              "Start a new file after this size of the current one exceeds this. Defaults to 256KB.");
 
-// Since `class ClientFileStorage` is timestamp-type-agnostic, while flags assume milliseconds,
-// only support instances of ClientFileStorage that use `bricks::time::UNIX_TIME_MILLISECONDS` as T_TIMESTAMP.
+namespace fsq {
+
+// Since `class FSQ` is timestamp-type-agnostic, while flags assume milliseconds,
+// only support instances of FSQ that use `bricks::time::UNIX_TIME_MILLISECONDS` as T_TIMESTAMP.
 template<class CONFIG>
-struct ClientFileStorageParamsFromFlags {
+struct FSQParamsFromFlags {
   typedef CONFIG T_CONFIG;
-  typedef ClientFileStorageParams<CONFIG> params_type;
+  typedef FSQParams<CONFIG> params_type;
   static typename std::enable_if<
       std::is_same<typename T_CONFIG::TIME_MANAGER::T_TIMESTAMP, bricks::time::UNIX_TIME_MILLISECONDS>::value,
       params_type>::type
@@ -42,4 +44,6 @@ struct ClientFileStorageParamsFromFlags {
   }
 };
 
-#endif  // SANDBOX_CLIENT_FILE_STORAGE_FLAGS_H
+}  // namespace fsq
+
+#endif  // FSQ_FLAGS_H

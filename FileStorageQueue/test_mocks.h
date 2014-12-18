@@ -1,5 +1,10 @@
-#ifndef SANDBOX_TEST_MOCKS_H
-#define SANDBOX_TEST_MOCKS_H
+#ifndef FSQ_TEST_MOCKS_H
+#define FSQ_TEST_MOCKS_H
+
+namespace fsq {
+namespace testing {
+
+/*
 
 #include <cstdint>
 #include <exception>
@@ -66,17 +71,20 @@ struct MockFileManager final {
 template <typename TIMESTAMP>
 struct GenericMockExporter final {
   typedef TIMESTAMP T_TIMESTAMP;
-  /*
   void OnFileCommitted(const std::string& filename,
                        const uint64_t length,
                        const T_TIMESTAMP first_ms,
                        const T_TIMESTAMP last_ms) {
   }
-  */
   bool ReadyToAcceptData() const {
     return false;
   }
 };
 typedef struct GenericMockExporter<typename MockTimeManager::T_TIMESTAMP> MockExporter;
 
-#endif  // SANDBOX_TEST_MOCKS_H
+*/
+
+}  // namespace testing
+}  // namespace fsq
+
+#endif  // FSQ_TEST_MOCKS_H

@@ -1,9 +1,11 @@
-#ifndef SANDBOX_CLIENT_FILE_STORAGE_TYPES_H
-#define SANDBOX_CLIENT_FILE_STORAGE_TYPES_H
+#ifndef FSQ_TYPES_H
+#define FSQ_TYPES_H
 
 #include <string>
 
-// The status of ClientFileStorage file queue.
+namespace fsq {
+
+// The status of FSQ file queue.
 template <typename TIME_SPAN>
 struct QueueStatus {
   typedef TIME_SPAN T_TIME_SPAN;
@@ -16,15 +18,15 @@ struct QueueStatus {
   T_TIME_SPAN oldest_queued_file_age;
 };
 
-// Parameters for ClientFileStorage.
+// Parameters for FSQ.
 template <class CONFIG>
-struct ClientFileStorageParams {
+struct FSQParams {
 #ifdef PARAM
 #error "'PARAM' should not be defined by this point."
 #else
 #define PARAM(type, param)                           \
   type param;                                        \
-  ClientFileStorageParams& set_##param(type value) { \
+  FSQParams& set_##param(type value) { \
     param = value;                                   \
     return *this;                                    \
   }
@@ -36,4 +38,6 @@ struct ClientFileStorageParams {
 #endif
 };
 
-#endif  // SANDBOX_CLIENT_FILE_STORAGE_PARAMS_H
+}  // namespace fsq
+
+#endif  // FSQ_TYPES_H

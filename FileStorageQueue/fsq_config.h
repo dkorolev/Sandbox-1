@@ -1,7 +1,7 @@
 // TODO(dkorolev): Rename this file.
 
-#ifndef SANDBOX_CLIENT_FILE_STORAGE_CONFIG_H
-#define SANDBOX_CLIENT_FILE_STORAGE_CONFIG_H
+#ifndef FSQ_CONFIG_H
+#define FSQ_CONFIG_H
 
 #include <chrono>
 #include <condition_variable>
@@ -9,10 +9,12 @@
 #include <string>
 #include <thread>
 
-#include "client_file_storage_types.h"
+#include "fsq_types.h"
 
 #include "../Bricks/file/file.h"
 #include "../Bricks/time/time.h"
+
+namespace fsq {
 
 // Default retry policy.
 // Retry after an amount of time drawn from an exponential distribution
@@ -142,7 +144,7 @@ struct CPPChrono final {
   }
 };
 
-// Policy configuration for ClientFileStorage.
+// Policy configuration for FSQ.
 // User configurations will likely derive from this class and override some types.
 template <typename PROCESSOR>
 struct Config {
@@ -160,4 +162,6 @@ struct Config {
   }
 };
 
-#endif  // SANDBOX_CLIENT_FILE_STORAGE_CONFIG_H
+}  // namespace fsq
+
+#endif  // FSQ_CONFIG_H

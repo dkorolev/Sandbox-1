@@ -1,8 +1,8 @@
 // TODO(dkorolev): Rename this file and classes.
 // TODO(dkorolev): Ensure that the directory is scanned from within a dedicated thread.
 
-#ifndef SANDBOX_CLIENT_FILE_STORAGE_H
-#define SANDBOX_CLIENT_FILE_STORAGE_H
+#ifndef FSQ_H
+#define FSQ_H
 
 #include <chrono>
 #include <condition_variable>
@@ -10,30 +10,32 @@
 #include <string>
 #include <thread>
 
-#include "client_file_storage_types.h"
-#include "client_file_storage_config.h"
+#include "fsq_types.h"
+#include "fsq_config.h"
 
 #include "../Bricks/file/file.h"
 #include "../Bricks/time/time.h"
 
-// Default initializer invoked from the default constructor of ClientFileStorage.
+namespace fsq {
+
+// Default initializer invoked from the default constructor of FSQ.
 // Uses parameters from command-line flags. Requires requires users to
-// 1) `#include "client_file_storage_flags.h"`, and
+// 1) `#include "fsq_flags.h"`, and
 // 2) initialize the flags library with the passed in { argc, argv }.
-// Another option is to not use the default constructor of ClientFileStorage and pass in the params manually.
+// Another option is to not use the default constructor of FSQ and pass in the params manually.
 // This split is to eliminate the dependency on command line flags, which are not used on mobile devices.
 template <class CONFIG>
-struct ClientFileStorageParamsFromFlags;
+struct FSQParamsFromFlags;
 
-// Class ClientFileStorage manages local, filesystem-based message queue.
+// Class FSQ manages local, filesystem-based message queue.
 // A temporary file is created and then only appended to. Once the policy dictates so,
 // it is declared finalized and thus atomically renamed under a different name,
 // using which it is passed to the processor, with the new append-only flie being started.
 // The processor runs in a dedicated thread, and may safely take its time to process the file.
-// If the processor returns so, the file is removed by ClientFileStorage. If the processor
+// If the processor returns so, the file is removed by FSQ. If the processor
 // returns false, the file is kept and then retried at some point later according to the retry policy.
 template <class CONFIG>
-class ClientFileStorage final {
+class FSQ final {
  public:
   typedef CONFIG T_CONFIG;
   typedef typename T_CONFIG::T_PROCESSOR T_PROCESSOR;
@@ -47,20 +49,20 @@ class ClientFileStorage final {
   typedef typename T_TIME_MANAGER::T_TIMESTAMP T_TIMESTAMP;
   typedef typename T_CONFIG::T_FILE_SYSTEM T_FILE_SYSTEM;
 
-  typedef ClientFileStorageParams<T_CONFIG> params_type;
+  typedef FSQParams<T_CONFIG> params_type;
 
-  ClientFileStorage(T_PROCESSOR& exporter,
+  FSQ(T_PROCESSOR& exporter,
                     T_TIME_MANAGER& time_manager,
                     T_FILE_SYSTEM& file_system,
-                    params_type params = ClientFileStorageParamsFromFlags<T_CONFIG>::Construct())
+                    params_type params = FSQParamsFromFlags<T_CONFIG>::Construct())
       : params_(params),
         exporter_(exporter),
         time_manager_(time_manager),
         file_system_(file_system),
-        exporter_thread_(&ClientFileStorage::ExporterThread, this) {
+        exporter_thread_(&FSQ::ExporterThread, this) {
     // TODO(dkorolev): Get current file name, timestamp and length.
   }
-  ~ClientFileStorage() {
+  ~FSQ() {
     // Wait until the exporter thread terminates gracefully.
     {
       std::unique_lock<std::mutex> lock(mutex_);
@@ -142,10 +144,12 @@ class ClientFileStorage final {
   std::condition_variable condition_variable_;
   bool destructing_ = false;
 
-  ClientFileStorage(const ClientFileStorage&) = delete;
-  ClientFileStorage(ClientFileStorage&&) = delete;
-  void operator=(const ClientFileStorage&) = delete;
-  void operator=(ClientFileStorage&&) = delete;
+  FSQ(const FSQ&) = delete;
+  FSQ(FSQ&&) = delete;
+  void operator=(const FSQ&) = delete;
+  void operator=(FSQ&&) = delete;
 };
 
-#endif  // SANDBOX_CLIENT_FILE_STORAGE_H
+}  // namespace fsq
+
+#endif  // FSQ_H

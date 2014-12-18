@@ -7,8 +7,8 @@
 #include <map>
 #include <string>
 
-#include "client_file_storage.h"
-#include "client_file_storage_flags.h"  // Test the command-line flags parsing sub-module as well.
+#include "fsq.h"
+#include "fsq_flags.h"  // Test the command-line flags parsing sub-module as well.
 
 #include "../Bricks/3party/gtest/gtest.h"
 #include "../Bricks/3party/gtest/gtest-main-with-dflags.h"
