@@ -18,15 +18,15 @@ namespace fsq {
 template <typename PROCESSOR>
 struct Config {
   typedef PROCESSOR T_PROCESSOR;
-  typedef strategy::DummyFileNamingToUnblockAlexFromMinsk T_FILE_NAMING_STRATEGY;
-  template <class TIME_MANAGER, class FILE_SYSTEM>
-  using T_RETRY_POLICY = strategy::RetryExponentially<TIME_MANAGER, FILE_SYSTEM>;
-  typedef strategy::KeepFilesAround100KBUnlessNoBacklog T_FINALIZE_POLICY;
-  typedef strategy::KeepUnder1GBAndUnder1KFiles T_PURGE_POLICY;
   typedef std::string T_MESSAGE;
   typedef strategy::JustAppendToFile T_FILE_APPEND_POLICY;
-  typedef strategy::UseUNIXTimeInMilliseconds T_TIME_MANAGER;
+  typedef strategy::DummyFileNamingToUnblockAlexFromMinsk T_FILE_NAMING_STRATEGY;
   typedef bricks::FileSystem T_FILE_SYSTEM;
+  typedef strategy::UseUNIXTimeInMilliseconds T_TIME_MANAGER;
+  typedef strategy::KeepFilesAround100KBUnlessNoBacklog T_FINALIZE_POLICY;
+  typedef strategy::KeepUnder1GBAndUnder1KFiles T_PURGE_POLICY;
+  template <class TIME_MANAGER, class FILE_SYSTEM>
+  using T_RETRY_POLICY = strategy::RetryExponentially<TIME_MANAGER, FILE_SYSTEM>;
   static bool DetachProcessingThreadOnTermination() {
     return false;
   }

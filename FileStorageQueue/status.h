@@ -16,7 +16,7 @@ struct QueueFinalizedFilesStatus {
   T_TIMESTAMP oldest_queued_file_timestamp = T_TIMESTAMP(0);
   T_TIME_SPAN oldest_queued_file_age = T_TIME_SPAN(0);
   uint64_t oldest_queued_file_size = 0;
-  void UpdateFinalizedFileStatus(const QueueFinalizedFilesStatus& rhs) {
+  void UpdateFinalizedFilesStatus(const QueueFinalizedFilesStatus& rhs) {
     *this = rhs;
   }
 };

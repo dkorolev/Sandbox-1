@@ -55,18 +55,20 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
                   public CONFIG::T_FILE_APPEND_POLICY {
  public:
   typedef CONFIG T_CONFIG;
+
   typedef typename T_CONFIG::T_PROCESSOR T_PROCESSOR;
-  typedef typename T_CONFIG::T_FILE_NAMING_STRATEGY T_FILE_NAMING_STRATEGY;
-  template <class TIME_MANAGER, class FILE_SYSTEM>
-  using T_RETRY_POLICY = typename T_CONFIG::template T_RETRY_POLICY<TIME_MANAGER, FILE_SYSTEM>;
-  typedef typename T_CONFIG::T_FINALIZE_POLICY T_FINALIZE_POLICY;
-  typedef typename T_CONFIG::T_PURGE_POLICY T_PURGE_POLICY;
   typedef typename T_CONFIG::T_MESSAGE T_MESSAGE;
   typedef typename T_CONFIG::T_FILE_APPEND_POLICY T_FILE_APPEND_POLICY;
+  typedef typename T_CONFIG::T_FILE_NAMING_STRATEGY T_FILE_NAMING_STRATEGY;
+  typedef typename T_CONFIG::T_FILE_SYSTEM T_FILE_SYSTEM;
   typedef typename T_CONFIG::T_TIME_MANAGER T_TIME_MANAGER;
+  typedef typename T_CONFIG::T_FINALIZE_POLICY T_FINALIZE_POLICY;
+  typedef typename T_CONFIG::T_PURGE_POLICY T_PURGE_POLICY;
+  template <class TIME_MANAGER, class FILE_SYSTEM>
+  using T_RETRY_POLICY = typename T_CONFIG::template T_RETRY_POLICY<TIME_MANAGER, FILE_SYSTEM>;
+
   typedef typename T_TIME_MANAGER::T_TIMESTAMP T_TIMESTAMP;
   typedef typename T_TIME_MANAGER::T_TIME_SPAN T_TIME_SPAN;
-  typedef typename T_CONFIG::T_FILE_SYSTEM T_FILE_SYSTEM;
 
   typedef QueueFinalizedFilesStatus<T_TIMESTAMP, T_TIME_SPAN> FinalizedFilesStatus;
   typedef QueueStatus<T_TIMESTAMP, T_TIME_SPAN> Status;
@@ -76,9 +78,9 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       const T_TIME_MANAGER& time_manager = T_TIME_MANAGER(),
       const T_FILE_SYSTEM& file_system = T_FILE_SYSTEM())
       : processor_(processor),
+        working_directory_(working_directory),
         time_manager_(time_manager),
         file_system_(file_system),
-        working_directory_(working_directory),
         processor_thread_(&FSQ::ProcessorThread, this) {
     // TODO(dkorolev): Get current file name, timestamp and length.
   }
@@ -144,6 +146,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
     return status_;
   }
 
+ protected:
   FinalizedFilesStatus RescanDir() const {
     FinalizedFilesStatus finalized_files_status;
     T_FILE_SYSTEM::ScanDir(working_directory_, [this, &finalized_files_status](const std::string& file_name) {
@@ -201,7 +204,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
 
         has_new_file_ = false;
         const FinalizedFilesStatus finalized_files_status = RescanDir();
-        status_.UpdateFinalizedFileStatus(finalized_files_status);
+        status_.UpdateFinalizedFilesStatus(finalized_files_status);
 
         if (!finalized_files_status.oldest_queued_file_name.empty()) {
           const FileProcessingResult result = processor_.template OnFileReady<T_TIMESTAMP, T_TIME_SPAN>(
@@ -218,13 +221,12 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
     }
   }
 
-  //  const Params params_;
   Status status_;
 
   T_PROCESSOR& processor_;
+  std::string working_directory_;
   const T_TIME_MANAGER& time_manager_;
   const T_FILE_SYSTEM& file_system_;
-  std::string working_directory_;
 
   std::unique_ptr<typename T_FILE_SYSTEM::OutputFile> current_file_;
   std::string current_file_name_;

@@ -11,10 +11,18 @@
 namespace fsq {
 namespace strategy {
 
-// Default file naming strategy.
-// ***** !!!!! *****
-// TODO(dkorolev): Tweak it.
-// ***** !!!!! *****
+// Default file append strategy: Appends data to files in raw format, without separators.
+struct JustAppendToFile {
+  void AppendToFile(bricks::FileSystem::OutputFile& fo, const std::string& message) const {
+    // TODO(dkorolev): Should we flush each record? Make it part of the strategy?
+    fo << message << std::flush;
+  }
+  uint64_t MessageSizeInBytes(const std::string& message) const {
+    return message.length();
+  }
+};
+
+// Default file naming strategy: Use "finalized-{timestamp}.bin" and "current-{timestamp}.bin".
 const char kFinalizedPrefix[] = "finalized-";
 const char kFinalizedSuffix[] = ".bin";
 const size_t kFinalizedPrefixLength = bricks::CompileTimeStringLength(kFinalizedPrefix);
@@ -39,11 +47,59 @@ struct DummyFileNamingToUnblockAlexFromMinsk {
   }
 };
 
-// Default retry strategy for file processing.
-// On success, runs at full speed without any delays.
-// On failure, retries after an amount of time drawn from an exponential distribution
+// Default time manager strategy: Use UNIX time in milliseconds.
+struct UseUNIXTimeInMilliseconds final {
+  typedef bricks::time::UNIX_TIME_MILLISECONDS T_TIMESTAMP;
+  typedef bricks::time::MILLISECONDS_INTERVAL T_TIME_SPAN;
+  T_TIMESTAMP Now() const {
+    return bricks::time::Now();
+  }
+};
+
+// Default file finalization strategy: Keeps files under 100KB, if there is backlog,
+// in case of no backlog keep them under 10KB. Also manage maximum age before forced finalization:
+// a maximum of 24 hours when there is backlog, a maximum of 10 minutes if there is no.
+struct KeepFilesAround100KBUnlessNoBacklog {
+  typedef bricks::time::UNIX_TIME_MILLISECONDS ABSOLUTE_MS;
+  typedef bricks::time::MILLISECONDS_INTERVAL DELTA_MS;
+  // This default strategy only supports MILLISECONDS from bricks:time as timestamps.
+  bool ShouldFinalize(const QueueStatus<ABSOLUTE_MS, DELTA_MS>& status) const {
+    if (status.appended_file_size >= 100 * 1024 || status.appended_file_age > DELTA_MS(24 * 60 * 60 * 1000)) {
+      // Always keep files of at most 100KB and at most 24 hours old.
+      return true;
+    } else if (status.number_of_queued_files > 0) {
+      // The above is the only condition as long as there are queued, pending, unprocessed files.
+      return false;
+    } else {
+      // Otherwise, there are no files pending processing no queue,
+      // and the default strategy can be legitimately expected to keep finalizing files somewhat often.
+      return (status.appended_file_size >= 10 * 1024 || status.appended_file_age > DELTA_MS(10 * 60 * 1000));
+    }
+  }
+};
+
+// Default file purge strategy: Keeps under 1K files of under 1GB of total volume.
+struct KeepUnder1GBAndUnder1KFiles {
+  bool ShouldPurge(const QueueStatus<bricks::time::UNIX_TIME_MILLISECONDS, bricks::time::MILLISECONDS_INTERVAL>&
+                       status) const {
+    if (status.total_queued_files_size + status.appended_file_size > 1024 * 1024 * 1024) {
+      // Purge the oldest queued files if the total size of data stored in the queue exceeds 1GB.
+      return true;
+    } else if (status.number_of_queued_files > 1000) {
+      // Purge the oldest queued files if the total number of queued files exceeds 1000.
+      return true;
+    } else {
+      // Good to go otherwise.
+      return false;
+    }
+  }
+};
+
+// Default retry strategy for the processing of finalized files.
+// On `Success`, processes files as they arrive without any delays.
+// On `Unavaliable`, retries after an amount of time drawn from an exponential distribution
 // with the mean defaulting to 15 minutes, min defaulting to 1 minute and max defaulting to 24 hours.
-// On forced retry and failure updates the delay keeping the max of { current, newly suggested }.
+// ...
 // Handles time skews correctly.
 template <typename TIME_MANAGER_FOR_RETRY_STRATEGY, typename FILE_SYSTEM_FOR_RETRY_STRATEGY>
 class RetryExponentially {
@@ -117,60 +173,6 @@ class RetryExponentially {
   const Params params_;
 };
 
-// Default file finalization strategy.
-// Does what the name says: Keeps files around 100KB, unless there is no backlog,
-// in which case files are finalized sooner for reduced processing latency.
-struct KeepFilesAround100KBUnlessNoBacklog {
-  typedef bricks::time::UNIX_TIME_MILLISECONDS ABSOLUTE_MS;
-  typedef bricks::time::MILLISECONDS_INTERVAL DELTA_MS;
-  // The default implementation only supports MILLISECOND as timestamps.
-  bool ShouldFinalize(const QueueStatus<ABSOLUTE_MS, DELTA_MS>& status) const {
-    if (status.appended_file_size >= 100 * 1024 * 1024 ||
-        status.appended_file_age > DELTA_MS(24 * 60 * 60 * 1000)) {
-      // Always keep files of at most 100KB and at most 24 hours old.
-      return true;
-    } else if (status.number_of_queued_files > 0) {
-      // The above is the only condition as long as there are queued, pending, unprocessed files.
-      return false;
-    } else {
-      // Otherwise, there are no files pending processing no queue,
-      // and the default strategy can be legitimately expected to keep finalizing files somewhat often.
-      return (status.appended_file_size >= 10 * 1024 * 1024 ||
-              status.appended_file_age > DELTA_MS(10 * 60 * 1000));
-    }
-  }
-};
-
-// Default file purge strategy.
-// Does what the name says: Keeps under 1'000 files of under 1GB total volume.
-struct KeepUnder1GBAndUnder1KFiles {
-  bool ShouldPurge(const QueueStatus<bricks::time::UNIX_TIME_MILLISECONDS, bricks::time::MILLISECONDS_INTERVAL>&
-                       status) const {
-    if (status.total_queued_files_size + status.appended_file_size > 1024 * 1024 * 1024) {
-      // Purge the oldest queued files if the total size of data stored in the queue exceeds 1GB.
-      return true;
-    } else if (status.number_of_queued_files > 1000) {
-      // Purge the oldest queued files if the total number of queued files exceeds 1000.
-      return true;
-    } else {
-      // Good to go otherwise.
-      return false;
-    }
-  }
-};
-
-// Default file append strategy.
-// Appends data to files in raw format, without separators.
-struct JustAppendToFile {
-  void AppendToFile(bricks::FileSystem::OutputFile& fo, const std::string& message) const {
-    // TODO(dkorolev): Should we flush each record? Make it part of the strategy?
-    fo << message << std::flush;
-  }
-  uint64_t MessageSizeInBytes(const std::string& message) const {
-    return message.length();
-  }
-};
-
 // Another simple file append strategy: Append messages adding a separator after each of them.
 class AppendToFileWithSeparator {
  public:
@@ -187,15 +189,6 @@ class AppendToFileWithSeparator {
 
  private:
   std::string separator_ = "";
-};
-
-// Default time strategy: Use UNIX time in milliseconds.
-struct UseUNIXTimeInMilliseconds final {
-  typedef bricks::time::UNIX_TIME_MILLISECONDS T_TIMESTAMP;
-  typedef bricks::time::MILLISECONDS_INTERVAL T_TIME_SPAN;
-  T_TIMESTAMP Now() const {
-    return bricks::time::Now();
-  }
 };
 
 }  // namespace strategy
