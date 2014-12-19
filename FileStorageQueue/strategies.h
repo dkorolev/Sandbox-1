@@ -23,41 +23,38 @@ struct JustAppendToFile {
 };
 
 // Default file naming strategy: Use "finalized-{timestamp}.bin" and "current-{timestamp}.bin".
-const char kFinalizedPrefix[] = "finalized-";
-const char kFinalizedSuffix[] = ".bin";
-const size_t kFinalizedPrefixLength = bricks::CompileTimeStringLength(kFinalizedPrefix);
-const size_t kFinalizedSuffixLength = bricks::CompileTimeStringLength(kFinalizedSuffix);
-
 struct DummyFileNamingToUnblockAlexFromMinsk {
-  template <typename T_TIMESTAMP>
-  inline static std::string GenerateCurrentFileName(const T_TIMESTAMP timestamp) {
-    return "current-" + bricks::strings::PackToString(timestamp) + ".bin";
-  }
-  template <typename T_TIMESTAMP>
-  inline static std::string GenerateFinalizedFileName(const T_TIMESTAMP timestamp) {
-    return kFinalizedPrefix + bricks::strings::PackToString(timestamp) + kFinalizedSuffix;
-  }
-  // Checks whether a given name is an accepted finalized file name.
-  // Extracts its timestamp from the name if the answer is positive.
-  // Does a pedantically careful check.
-  template <typename T_TIMESTAMP>
-  inline static bool ParseFinalizedFileName(const std::string& filename, T_TIMESTAMP* output_timestamp) {
-    if ((filename.length() ==
-         kFinalizedPrefixLength + bricks::strings::FixedSizeSerializer<T_TIMESTAMP>::size_in_bytes +
-             kFinalizedSuffixLength) &&
-        filename.substr(0, kFinalizedPrefixLength) == kFinalizedPrefix) {
-      T_TIMESTAMP timestamp;
-      bricks::strings::UnpackFromString(filename.substr(kFinalizedPrefixLength), timestamp);
-      if (GenerateFinalizedFileName(timestamp) == filename) {
-        *output_timestamp = timestamp;
-        return true;
+  struct FileNamingSchema {
+    FileNamingSchema(const std::string& prefix, const std::string& suffix) : prefix_(prefix), suffix_(suffix) {
+    }
+    template <typename T_TIMESTAMP>
+    inline std::string GenerateFileName(const T_TIMESTAMP timestamp) {
+      return prefix_ + bricks::strings::PackToString(timestamp) + suffix_;
+    }
+    template <typename T_TIMESTAMP>
+    inline bool ParseFileName(const std::string& filename, T_TIMESTAMP* output_timestamp) {
+      if ((filename.length() ==
+           prefix_.length() + bricks::strings::FixedSizeSerializer<T_TIMESTAMP>::size_in_bytes +
+               suffix_.length()) &&
+          filename.substr(0, prefix_.length()) == prefix_ &&
+          filename.substr(filename.length() - suffix_.length()) == suffix_) {
+        T_TIMESTAMP timestamp;
+        bricks::strings::UnpackFromString(filename.substr(prefix_.length()), timestamp);
+        if (GenerateFileName(timestamp) == filename) {
+          *output_timestamp = timestamp;
+          return true;
+        } else {
+          return false;
+        }
       } else {
         return false;
       }
-    } else {
-      return false;
     }
-  }
+    std::string prefix_;
+    std::string suffix_;
+  };
+  FileNamingSchema current = FileNamingSchema("current-", ".bin");
+  FileNamingSchema finalized = FileNamingSchema("finalized-", ".bin");
 };
 
 // Default time manager strategy: Use UNIX time in milliseconds.

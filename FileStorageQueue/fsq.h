@@ -30,6 +30,8 @@
 #ifndef FSQ_H
 #define FSQ_H
 
+#include <iostream>  // TODO(dkorolev): Remove it and cerr in prod.
+
 #include <cassert>  // TODO(dkorolev): Perhaps introduce exceptions instead of ASSERT-s?
 
 #include <algorithm>
@@ -127,7 +129,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       status_.appended_file_size = 0;
       status_.appended_file_timestamp = T_TIMESTAMP(0);
       const std::string finalized_file_name = T_FILE_SYSTEM::JoinPath(
-          working_directory_, T_FILE_NAMING_STRATEGY::GenerateFinalizedFileName(current_file_creation_time_));
+          working_directory_, T_FILE_NAMING_STRATEGY::finalized.GenerateFileName(current_file_creation_time_));
       T_FILE_SYSTEM::RenameFile(current_file_name_, finalized_file_name);
       current_file_name_.clear();
     }
@@ -171,14 +173,20 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   void EnsureCurrentFileIsOpen(const uint64_t /*message_size_in_bytes*/, const T_TIMESTAMP now) {
     // TODO(dkorolev): Purge.
     if (!current_file_.get()) {
-      current_file_name_ = working_directory_ + '/' + T_FILE_NAMING_STRATEGY::GenerateCurrentFileName(now);
+      current_file_name_ = working_directory_ + '/' + T_FILE_NAMING_STRATEGY::current.GenerateFileName(now);
       current_file_.reset(new typename T_FILE_SYSTEM::OutputFile(current_file_name_));
       current_file_creation_time_ = now;
     }
   }
 
   void ProcessorThread() {
-    // TODO(dkorolev): Initial directory scan.
+    // Get the list of current files.
+    const std::vector<FileInfo<T_TIMESTAMP>>& current_files_on_disk = ScanDir([this](
+        const std::string& s, T_TIMESTAMP* t) { return T_FILE_NAMING_STRATEGY::current.ParseFileName(s, t); });
+    for (const auto& f : current_files_on_disk) {
+      std::cerr << "CURRENT: " << f.name << std::endl;
+    }
+
     while (true) {
       // TODO(dkorolev): Code and test file scan and processing.
       {
@@ -202,12 +210,15 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
           return;
         }
 
-        has_new_file_ = false;
+        {
+          std::unique_lock<std::mutex> lock(mutex_);
+          has_new_file_ = false;
+        }
 
         // Don't use std::bind() for possible static functions.
         const std::vector<FileInfo<T_TIMESTAMP>>& files_on_disk =
             ScanDir([this](const std::string& s,
-                           T_TIMESTAMP* t) { return T_FILE_NAMING_STRATEGY::ParseFinalizedFileName(s, t); });
+                           T_TIMESTAMP* t) { return T_FILE_NAMING_STRATEGY::finalized.ParseFileName(s, t); });
 
         {
           // TODO(dkorolev): Locked.
