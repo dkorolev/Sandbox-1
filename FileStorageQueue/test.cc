@@ -8,12 +8,13 @@
 #include "../Bricks/3party/gtest/gtest-main.h"
 
 using std::string;
-using std::atomic_bool;
+using std::atomic_size_t;
 
 const char* const kTestDir = "build/";
 
-struct MockProcessor {
-  MockProcessor() : updated(false) {
+// TestOutputFilesProcessor collects the output of finalized files.
+struct TestOutputFilesProcessor {
+  TestOutputFilesProcessor() : finalized_count(0) {
   }
   template <typename T_TIMESTAMP, typename T_TIME_SPAN>
   fsq::FileProcessingResult OnFileReady(const std::string& file_name,
@@ -24,11 +25,11 @@ struct MockProcessor {
                                         T_TIMESTAMP /*now*/) {
     filename = file_base_name;
     contents = bricks::ReadFileAsString(file_name);
-    updated = true;
+    finalized_count = true;
     return fsq::FileProcessingResult::Success;
   }
 
-  atomic_bool updated;
+  atomic_size_t finalized_count;
   string filename = "";
   string contents = "";
 };
@@ -42,7 +43,7 @@ struct MockTime {
   }
 };
 
-struct MockConfig : fsq::Config<MockProcessor> {
+struct MockConfig : fsq::Config<TestOutputFilesProcessor> {
   // Mock time.
   typedef MockTime T_TIME_MANAGER;
   // Append using newlines.
@@ -56,17 +57,21 @@ struct MockConfig : fsq::Config<MockProcessor> {
                                                   MockTime::T_TIME_SPAN(60 * 1000)> T_FINALIZE_POLICY;
   // Purge after 1000 bytes total or after 3 files.
   typedef fsq::strategy::SimplePurgePolicy<1000, 3> T_PURGE_POLICY;
+
+  // Non-static initialization.
+  template <typename T_FSQ_INSTANCE>
+  static void Initialize(T_FSQ_INSTANCE& instance) {
+    instance.SetSeparator("\n");
+  }
 };
 
 typedef fsq::FSQ<MockConfig> FSQ;
 
 TEST(FileSystemQueueTest, SimpleSmokeTest) {
-  // A simple way to create and initialize FileSystemQueue ("FSQ").
-  MockProcessor processor;
-  MockTime time_manager;
-  bricks::FileSystem file_system;
-  FSQ fsq(processor, kTestDir, time_manager, file_system);
-  fsq.SetSeparator("\n");
+  TestOutputFilesProcessor processor;
+  MockTime mock_wall_time;
+  FSQ fsq(processor, kTestDir, mock_wall_time);
+  //  fsq.SetSeparator("\n");
 
   // Confirm the queue is empty.
   EXPECT_EQ(0ull, fsq.GetQueueStatus().appended_file_size);
@@ -74,22 +79,22 @@ TEST(FileSystemQueueTest, SimpleSmokeTest) {
   EXPECT_EQ(0ul, fsq.GetQueueStatus().finalized.total_size);
 
   // Add a few entries.
-  time_manager.now = 1001;
+  mock_wall_time.now = 1001;
   fsq.PushMessage("foo");
-  time_manager.now = 1002;
+  mock_wall_time.now = 1002;
   fsq.PushMessage("bar");
-  time_manager.now = 1003;
+  mock_wall_time.now = 1003;
   fsq.PushMessage("baz");
-  time_manager.now = 1010;
+  mock_wall_time.now = 1010;
 
   // Confirm the queue is empty.
   EXPECT_EQ(12ull, fsq.GetQueueStatus().appended_file_size);  // Three messages of (3 + '\n') bytes each.
   EXPECT_EQ(0u, fsq.GetQueueStatus().finalized.queue.size());
   EXPECT_EQ(0ul, fsq.GetQueueStatus().finalized.total_size);
 
-  // Force entries processing to have three freshly added ones reach our MockProcessor.
+  // Force entries processing to have three freshly added ones reach our TestOutputFilesProcessor.
   fsq.ForceResumeProcessing();
-  while (!processor.updated) {
+  while (!processor.finalized_count) {
     ;  // Spin lock.
   }
 

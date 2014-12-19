@@ -87,6 +87,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
         time_manager_(time_manager),
         file_system_(file_system),
         processor_thread_(&FSQ::ProcessorThread, this) {
+    T_CONFIG::Initialize(*this);
     // TODO(dkorolev): Get current file name, timestamp and length.
   }
 
