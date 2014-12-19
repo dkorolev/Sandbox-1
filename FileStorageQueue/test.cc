@@ -59,10 +59,8 @@ TEST(FileSystemQueueTest, SimpleSmokeTest) {
 
   // Confirm the queue is empty.
   EXPECT_EQ(0ull, fsq.GetQueueStatus().appended_file_size);
-  EXPECT_EQ(0ll, fsq.GetQueueStatus().appended_file_age);
-  EXPECT_EQ(0u, fsq.GetQueueStatus().number_of_queued_files);
-  EXPECT_EQ(0ul, fsq.GetQueueStatus().total_queued_files_size);
-  EXPECT_EQ(0ll, fsq.GetQueueStatus().oldest_queued_file_age);
+  EXPECT_EQ(0u, fsq.GetQueueStatus().finalized.queue.size());
+  EXPECT_EQ(0ul, fsq.GetQueueStatus().finalized.total_size);
 
   // Add a few entries.
   time_manager.now = 1001;
@@ -75,10 +73,8 @@ TEST(FileSystemQueueTest, SimpleSmokeTest) {
 
   // Confirm the queue is empty.
   EXPECT_EQ(12ull, fsq.GetQueueStatus().appended_file_size);  // Three messages of (3 + '\n') bytes each.
-  EXPECT_EQ(2ll, fsq.GetQueueStatus().appended_file_age);     // 1003 - 1001.
-  EXPECT_EQ(0u, fsq.GetQueueStatus().number_of_queued_files);
-  EXPECT_EQ(0ul, fsq.GetQueueStatus().total_queued_files_size);
-  EXPECT_EQ(0ll, fsq.GetQueueStatus().oldest_queued_file_age);
+  EXPECT_EQ(0u, fsq.GetQueueStatus().finalized.queue.size());
+  EXPECT_EQ(0ul, fsq.GetQueueStatus().finalized.total_size);
 
   // Force entries processing to have three freshly added ones reach our MockProcessor.
   fsq.ForceResumeProcessing();

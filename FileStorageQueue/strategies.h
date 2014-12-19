@@ -37,13 +37,26 @@ struct DummyFileNamingToUnblockAlexFromMinsk {
   inline static std::string GenerateFinalizedFileName(const T_TIMESTAMP timestamp) {
     return kFinalizedPrefix + bricks::strings::PackToString(timestamp) + kFinalizedSuffix;
   }
+  // Checks whether a given name is an accepted finalized file name.
+  // Extracts its timestamp from the name if the answer is positive.
+  // Does a pedantically careful check.
   template <typename T_TIMESTAMP>
-  inline static bool IsFinalizedFileName(const std::string& filename) {
-    // TODO(dkorolev): Get a bit smarter here.
-    return (filename.length() ==
-            kFinalizedPrefixLength + bricks::strings::FixedSizeSerializer<T_TIMESTAMP>::size_in_bytes +
-                kFinalizedSuffixLength) &&
-           filename.substr(0, kFinalizedPrefixLength) == kFinalizedPrefix;
+  inline static bool ParseFinalizedFileName(const std::string& filename, T_TIMESTAMP* output_timestamp) {
+    if ((filename.length() ==
+         kFinalizedPrefixLength + bricks::strings::FixedSizeSerializer<T_TIMESTAMP>::size_in_bytes +
+             kFinalizedSuffixLength) &&
+        filename.substr(0, kFinalizedPrefixLength) == kFinalizedPrefix) {
+      T_TIMESTAMP timestamp;
+      bricks::strings::UnpackFromString(filename.substr(kFinalizedPrefixLength), timestamp);
+      if (GenerateFinalizedFileName(timestamp) == filename) {
+        *output_timestamp = timestamp;
+        return true;
+      } else {
+        return false;
+      }
+    } else {
+      return false;
+    }
   }
 };
 
@@ -63,29 +76,30 @@ struct KeepFilesAround100KBUnlessNoBacklog {
   typedef bricks::time::UNIX_TIME_MILLISECONDS ABSOLUTE_MS;
   typedef bricks::time::MILLISECONDS_INTERVAL DELTA_MS;
   // This default strategy only supports MILLISECONDS from bricks:time as timestamps.
-  bool ShouldFinalize(const QueueStatus<ABSOLUTE_MS, DELTA_MS>& status) const {
-    if (status.appended_file_size >= 100 * 1024 || status.appended_file_age > DELTA_MS(24 * 60 * 60 * 1000)) {
+  bool ShouldFinalize(const QueueStatus<ABSOLUTE_MS>& status, const ABSOLUTE_MS now) const {
+    if (status.appended_file_size >= 100 * 1024 ||
+        (now - status.appended_file_timestamp) > DELTA_MS(24 * 60 * 60 * 1000)) {
       // Always keep files of at most 100KB and at most 24 hours old.
       return true;
-    } else if (status.number_of_queued_files > 0) {
+    } else if (!status.finalized.queue.empty()) {
       // The above is the only condition as long as there are queued, pending, unprocessed files.
       return false;
     } else {
       // Otherwise, there are no files pending processing no queue,
       // and the default strategy can be legitimately expected to keep finalizing files somewhat often.
-      return (status.appended_file_size >= 10 * 1024 || status.appended_file_age > DELTA_MS(10 * 60 * 1000));
+      return (status.appended_file_size >= 10 * 1024 ||
+              (now - status.appended_file_timestamp) > DELTA_MS(10 * 60 * 1000));
     }
   }
 };
 
 // Default file purge strategy: Keeps under 1K files of under 1GB of total volume.
 struct KeepUnder1GBAndUnder1KFiles {
-  bool ShouldPurge(const QueueStatus<bricks::time::UNIX_TIME_MILLISECONDS, bricks::time::MILLISECONDS_INTERVAL>&
-                       status) const {
-    if (status.total_queued_files_size + status.appended_file_size > 1024 * 1024 * 1024) {
+  bool ShouldPurge(const QueueStatus<bricks::time::UNIX_TIME_MILLISECONDS>& status) const {
+    if (status.finalized.total_size + status.appended_file_size > 1024 * 1024 * 1024) {
       // Purge the oldest queued files if the total size of data stored in the queue exceeds 1GB.
       return true;
-    } else if (status.number_of_queued_files > 1000) {
+    } else if (status.finalized.queue.size() > 1000) {
       // Purge the oldest queued files if the total number of queued files exceeds 1000.
       return true;
     } else {

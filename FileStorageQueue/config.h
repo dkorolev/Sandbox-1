@@ -3,6 +3,8 @@
 
 #include <string>
 
+#include "../Bricks/time/time.h"
+
 #include "strategies.h"
 
 namespace fsq {

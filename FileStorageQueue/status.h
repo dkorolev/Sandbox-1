@@ -3,32 +3,41 @@
 #ifndef FSQ_STATUS_H
 #define FSQ_STATUS_H
 
+#include <deque>
+#include <string>
+#include <tuple>
+
 namespace fsq {
 
-// The status of all other, finalized, files combined.
-template <typename TIMESTAMP, typename TIME_SPAN>
-struct QueueFinalizedFilesStatus {
+template <typename TIMESTAMP>
+struct FileInfo {
   typedef TIMESTAMP T_TIMESTAMP;
-  typedef TIME_SPAN T_TIME_SPAN;
-  size_t number_of_queued_files = 0;
-  uint64_t total_queued_files_size = 0;
-  std::string oldest_queued_file_name = std::string("");  // The file to be passed to the processor next.
-  T_TIMESTAMP oldest_queued_file_timestamp = T_TIMESTAMP(0);
-  T_TIME_SPAN oldest_queued_file_age = T_TIME_SPAN(0);
-  uint64_t oldest_queued_file_size = 0;
-  void UpdateFinalizedFilesStatus(const QueueFinalizedFilesStatus& rhs) {
-    *this = rhs;
+  std::string name = std::string("");
+  T_TIMESTAMP timestamp = T_TIMESTAMP(0);
+  uint64_t size = 0;
+  FileInfo(const std::string& name, T_TIMESTAMP timestamp, uint64_t size)
+      : name(name), timestamp(timestamp), size(size) {
+  }
+  inline bool operator<(const FileInfo& rhs) const {
+    return std::tie(timestamp, name) < std::tie(rhs.timestamp, rhs.name);
   }
 };
 
-// The status of the file that is currently being appended to.
-template <typename TIMESTAMP, typename TIME_SPAN>
-struct QueueStatus : QueueFinalizedFilesStatus<TIMESTAMP, TIME_SPAN> {
+// The status of all other, finalized, files combined.
+template <typename TIMESTAMP>
+struct QueueFinalizedFilesStatus {
   typedef TIMESTAMP T_TIMESTAMP;
-  typedef TIME_SPAN T_TIME_SPAN;
+  std::deque<FileInfo<T_TIMESTAMP>> queue;  // Sorted from oldest to newest.
+  uint64_t total_size = 0;
+};
+
+// The status of the file that is currently being appended to.
+template <typename TIMESTAMP>
+struct QueueStatus {
+  typedef TIMESTAMP T_TIMESTAMP;
   uint64_t appended_file_size = 0;                       // Also zero if no file is currently open.
   T_TIMESTAMP appended_file_timestamp = T_TIMESTAMP(0);  // Also zero if no file is curently open.
-  T_TIME_SPAN appended_file_age = T_TIME_SPAN(0);        // Also zero if no file is currently open.
+  QueueFinalizedFilesStatus<T_TIMESTAMP> finalized;
 };
 
 }  // namespace fsq

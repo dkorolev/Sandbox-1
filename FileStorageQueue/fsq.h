@@ -32,10 +32,13 @@
 
 #include <cassert>  // TODO(dkorolev): Perhaps introduce exceptions instead of ASSERT-s?
 
+#include <algorithm>
 #include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "status.h"
 #include "config.h"
@@ -70,8 +73,8 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   typedef typename T_TIME_MANAGER::T_TIMESTAMP T_TIMESTAMP;
   typedef typename T_TIME_MANAGER::T_TIME_SPAN T_TIME_SPAN;
 
-  typedef QueueFinalizedFilesStatus<T_TIMESTAMP, T_TIME_SPAN> FinalizedFilesStatus;
-  typedef QueueStatus<T_TIMESTAMP, T_TIME_SPAN> Status;
+  typedef QueueFinalizedFilesStatus<T_TIMESTAMP> FinalizedFilesStatus;
+  typedef QueueStatus<T_TIMESTAMP> Status;
 
   FSQ(T_PROCESSOR& processor,
       const std::string& working_directory,
@@ -114,7 +117,6 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       assert(!current_file_->bad());
       T_FILE_APPEND_POLICY::AppendToFile(*current_file_.get(), message);
       status_.appended_file_size += message_size_in_bytes;
-      status_.appended_file_age = now - current_file_creation_time_;
     }
   }
 
@@ -123,10 +125,9 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
     if (current_file_.get()) {
       current_file_.reset(nullptr);
       status_.appended_file_size = 0;
-      status_.appended_file_age = T_TIME_SPAN(0);
-      const std::string finalized_file_name =
-          working_directory_ + '/' +
-          T_FILE_NAMING_STRATEGY::GenerateFinalizedFileName(current_file_creation_time_);
+      status_.appended_file_timestamp = T_TIMESTAMP(0);
+      const std::string finalized_file_name = T_FILE_SYSTEM::JoinPath(
+          working_directory_, T_FILE_NAMING_STRATEGY::GenerateFinalizedFileName(current_file_creation_time_));
       T_FILE_SYSTEM::RenameFile(current_file_name_, finalized_file_name);
       current_file_name_.clear();
     }
@@ -146,24 +147,23 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
     return status_;
   }
 
- protected:
-  FinalizedFilesStatus RescanDir() const {
-    FinalizedFilesStatus finalized_files_status;
-    T_FILE_SYSTEM::ScanDir(working_directory_, [this, &finalized_files_status](const std::string& file_name) {
-      if (T_FILE_NAMING_STRATEGY::template IsFinalizedFileName<T_TIMESTAMP>(file_name)) {
-        const uint64_t file_size = T_FILE_SYSTEM::GetFileSize(working_directory_ + '/' + file_name);
-        ++finalized_files_status.number_of_queued_files;
-        finalized_files_status.total_queued_files_size += file_size;
-        if (finalized_files_status.oldest_queued_file_name.empty()) {
-          finalized_files_status.oldest_queued_file_name = file_name;
-          finalized_files_status.oldest_queued_file_size = file_size;
-          // TODO(dkorolev): Fill in more fields.
-        }
-        // TODO(dkorolev): Pick the oldest file.
-        // TODO(dkorolev): Update `oldest_queued_file_timestamp`.
+  // Scans the directory for the files that match certain predicate.
+  // Gets their sized and and extracts timestamps from their names along the way.
+  template <typename F>
+  std::vector<FileInfo<T_TIMESTAMP>> ScanDir(F f) {
+    std::vector<FileInfo<T_TIMESTAMP>> matched_files_list;
+    const auto& dir = working_directory_;
+    T_FILE_SYSTEM::ScanDir(working_directory_,
+                           [this, &matched_files_list, &f, dir](const std::string& file_name) {
+      // if (T_FILE_NAMING_STRATEGY::template IsFinalizedFileName<T_TIMESTAMP>(file_name)) {
+      T_TIMESTAMP timestamp;
+      if (f(file_name, &timestamp)) {
+        matched_files_list.emplace_back(
+            file_name, timestamp, T_FILE_SYSTEM::GetFileSize(T_FILE_SYSTEM::JoinPath(dir, file_name)));
       }
     });
-    return finalized_files_status;
+    std::sort(matched_files_list.begin(), matched_files_list.end());
+    return matched_files_list;
   }
 
  private:
@@ -203,17 +203,31 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
         }
 
         has_new_file_ = false;
-        const FinalizedFilesStatus finalized_files_status = RescanDir();
-        status_.UpdateFinalizedFilesStatus(finalized_files_status);
 
-        if (!finalized_files_status.oldest_queued_file_name.empty()) {
-          const FileProcessingResult result = processor_.template OnFileReady<T_TIMESTAMP, T_TIME_SPAN>(
-              working_directory_ + '/' + finalized_files_status.oldest_queued_file_name,
-              finalized_files_status.oldest_queued_file_name,
-              finalized_files_status.oldest_queued_file_size,
-              finalized_files_status.oldest_queued_file_timestamp,  // TODO(dkorolev): Fill these fields.
-              finalized_files_status.oldest_queued_file_age,
-              time_manager_.Now());
+        // Don't use std::bind() for possible static functions.
+        const std::vector<FileInfo<T_TIMESTAMP>>& files_on_disk =
+            ScanDir([this](const std::string& s,
+                           T_TIMESTAMP* t) { return T_FILE_NAMING_STRATEGY::ParseFinalizedFileName(s, t); });
+
+        {
+          // TODO(dkorolev): Locked.
+          status_.finalized.queue.assign(files_on_disk.begin(), files_on_disk.end());
+          status_.finalized.total_size = 0;
+          for (const auto& file : status_.finalized.queue) {
+            status_.finalized.total_size += file.size;
+          }
+        }
+
+        if (!status_.finalized.queue.empty()) {
+          const T_TIMESTAMP now = time_manager_.Now();
+          const FileInfo<T_TIMESTAMP>& file = status_.finalized.queue.back();
+          const FileProcessingResult result =
+              processor_.template OnFileReady<T_TIMESTAMP, T_TIME_SPAN>(working_directory_ + '/' + file.name,
+                                                                        file.name,
+                                                                        file.size,
+                                                                        file.timestamp,
+                                                                        now - file.timestamp,
+                                                                        now);
           static_cast<void>(result);
         }
       }
