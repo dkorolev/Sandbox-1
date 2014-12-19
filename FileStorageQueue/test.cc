@@ -43,8 +43,19 @@ struct MockTime {
 };
 
 struct MockConfig : fsq::Config<MockProcessor> {
+  // Mock time.
   typedef MockTime T_TIME_MANAGER;
+  // Append using newlines.
   typedef fsq::strategy::AppendToFileWithSeparator T_FILE_APPEND_POLICY;
+  // No backlog: 20 bytes 10 seconds old files max, with backlog: 100 bytes 60 seconds old files max.
+  typedef fsq::strategy::SimpleFinalizationPolicy<MockTime::T_TIMESTAMP,
+                                                  MockTime::T_TIME_SPAN,
+                                                  20,
+                                                  MockTime::T_TIME_SPAN(10 * 1000),
+                                                  100,
+                                                  MockTime::T_TIME_SPAN(60 * 1000)> T_FINALIZE_POLICY;
+  // Purge after 1000 bytes total or after 3 files.
+  typedef fsq::strategy::SimplePurgePolicy<1000, 3> T_PURGE_POLICY;
 };
 
 typedef fsq::FSQ<MockConfig> FSQ;

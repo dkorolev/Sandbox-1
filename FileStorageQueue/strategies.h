@@ -59,7 +59,7 @@ struct DummyFileNamingToUnblockAlexFromMinsk {
 
 // Default time manager strategy: Use UNIX time in milliseconds.
 struct UseUNIXTimeInMilliseconds final {
-  typedef bricks::time::UNIX_TIME_MILLISECONDS T_TIMESTAMP;
+  typedef bricks::time::EPOCH_MILLISECONDS T_TIMESTAMP;
   typedef bricks::time::MILLISECONDS_INTERVAL T_TIME_SPAN;
   T_TIMESTAMP Now() const {
     return bricks::time::Now();
@@ -69,15 +69,17 @@ struct UseUNIXTimeInMilliseconds final {
 // Default file finalization strategy: Keeps files under 100KB, if there is backlog,
 // in case of no backlog keep them under 10KB. Also manage maximum age before forced finalization:
 // a maximum of 24 hours when there is backlog, a maximum of 10 minutes if there is no.
-template <uint64_t BACKLOG_MAX_FILE_SIZE,
-          bricks::time::MILLISECONDS_INTERVAL BACKLOG_MAX_FILE_AGE,
+template <typename TIMESTAMP,
+          typename TIME_SPAN,
+          uint64_t BACKLOG_MAX_FILE_SIZE,
+          TIME_SPAN BACKLOG_MAX_FILE_AGE,
           uint64_t REALTIME_MAX_FILE_SIZE,
-          bricks::time::MILLISECONDS_INTERVAL REALTIME_MAX_FILE_AGE>
+          TIME_SPAN REALTIME_MAX_FILE_AGE>
 struct SimpleFinalizationPolicy {
-  typedef bricks::time::UNIX_TIME_MILLISECONDS ABSOLUTE_MS;
-  typedef bricks::time::MILLISECONDS_INTERVAL DELTA_MS;
+  typedef TIMESTAMP T_TIMESTAMP;
+  typedef TIME_SPAN T_TIME_SPAN;
   // This default strategy only supports MILLISECONDS from bricks:time as timestamps.
-  bool ShouldFinalize(const QueueStatus<ABSOLUTE_MS>& status, const ABSOLUTE_MS now) const {
+  bool ShouldFinalize(const QueueStatus<T_TIMESTAMP>& status, const T_TIMESTAMP now) const {
     if (status.appended_file_size >= BACKLOG_MAX_FILE_SIZE ||
         (now - status.appended_file_timestamp) > BACKLOG_MAX_FILE_AGE) {
       // Always keep files of at most 100KB and at most 24 hours old.
@@ -95,7 +97,9 @@ struct SimpleFinalizationPolicy {
 };
 
 struct KeepFilesAround100KBUnlessNoBacklog
-    : SimpleFinalizationPolicy<100 * 1024,
+    : SimpleFinalizationPolicy<bricks::time::EPOCH_MILLISECONDS,
+                               bricks::time::MILLISECONDS_INTERVAL,
+                               100 * 1024,
                                bricks::time::MILLISECONDS_INTERVAL(24 * 60 * 60 * 1000),
                                10 * 1024,
                                bricks::time::MILLISECONDS_INTERVAL(10 * 60 * 1000)> {};
@@ -103,7 +107,7 @@ struct KeepFilesAround100KBUnlessNoBacklog
 // Default file purge strategy: Keeps under 1K files of under 1GB of total volume.
 template <uint64_t MAX_TOTAL_SIZE, size_t MAX_FILES>
 struct SimplePurgePolicy {
-  bool ShouldPurge(const QueueStatus<bricks::time::UNIX_TIME_MILLISECONDS>& status) const {
+  bool ShouldPurge(const QueueStatus<bricks::time::EPOCH_MILLISECONDS>& status) const {
     if (status.finalized.total_size + status.appended_file_size > MAX_TOTAL_SIZE) {
       // Purge the oldest queued files if the total size of data stored in the queue exceeds 1GB.
       return true;
