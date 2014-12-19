@@ -69,13 +69,17 @@ struct UseUNIXTimeInMilliseconds final {
 // Default file finalization strategy: Keeps files under 100KB, if there is backlog,
 // in case of no backlog keep them under 10KB. Also manage maximum age before forced finalization:
 // a maximum of 24 hours when there is backlog, a maximum of 10 minutes if there is no.
-struct KeepFilesAround100KBUnlessNoBacklog {
+template <uint64_t BACKLOG_MAX_FILE_SIZE,
+          bricks::time::MILLISECONDS_INTERVAL BACKLOG_MAX_FILE_AGE,
+          uint64_t REALTIME_MAX_FILE_SIZE,
+          bricks::time::MILLISECONDS_INTERVAL REALTIME_MAX_FILE_AGE>
+struct SimpleFinalizationPolicy {
   typedef bricks::time::UNIX_TIME_MILLISECONDS ABSOLUTE_MS;
   typedef bricks::time::MILLISECONDS_INTERVAL DELTA_MS;
   // This default strategy only supports MILLISECONDS from bricks:time as timestamps.
   bool ShouldFinalize(const QueueStatus<ABSOLUTE_MS>& status, const ABSOLUTE_MS now) const {
-    if (status.appended_file_size >= 100 * 1024 ||
-        (now - status.appended_file_timestamp) > DELTA_MS(24 * 60 * 60 * 1000)) {
+    if (status.appended_file_size >= BACKLOG_MAX_FILE_SIZE ||
+        (now - status.appended_file_timestamp) > BACKLOG_MAX_FILE_AGE) {
       // Always keep files of at most 100KB and at most 24 hours old.
       return true;
     } else if (!status.finalized.queue.empty()) {
@@ -84,19 +88,26 @@ struct KeepFilesAround100KBUnlessNoBacklog {
     } else {
       // Otherwise, there are no files pending processing no queue,
       // and the default strategy can be legitimately expected to keep finalizing files somewhat often.
-      return (status.appended_file_size >= 10 * 1024 ||
-              (now - status.appended_file_timestamp) > DELTA_MS(10 * 60 * 1000));
+      return (status.appended_file_size >= REALTIME_MAX_FILE_SIZE ||
+              (now - status.appended_file_timestamp) > REALTIME_MAX_FILE_AGE);
     }
   }
 };
 
+struct KeepFilesAround100KBUnlessNoBacklog
+    : SimpleFinalizationPolicy<100 * 1024,
+                               bricks::time::MILLISECONDS_INTERVAL(24 * 60 * 60 * 1000),
+                               10 * 1024,
+                               bricks::time::MILLISECONDS_INTERVAL(10 * 60 * 1000)> {};
+
 // Default file purge strategy: Keeps under 1K files of under 1GB of total volume.
-struct KeepUnder1GBAndUnder1KFiles {
+template <uint64_t MAX_TOTAL_SIZE, size_t MAX_FILES>
+struct SimplePurgePolicy {
   bool ShouldPurge(const QueueStatus<bricks::time::UNIX_TIME_MILLISECONDS>& status) const {
-    if (status.finalized.total_size + status.appended_file_size > 1024 * 1024 * 1024) {
+    if (status.finalized.total_size + status.appended_file_size > MAX_TOTAL_SIZE) {
       // Purge the oldest queued files if the total size of data stored in the queue exceeds 1GB.
       return true;
-    } else if (status.finalized.queue.size() > 1000) {
+    } else if (status.finalized.queue.size() > MAX_FILES) {
       // Purge the oldest queued files if the total number of queued files exceeds 1000.
       return true;
     } else {
@@ -105,6 +116,8 @@ struct KeepUnder1GBAndUnder1KFiles {
     }
   }
 };
+
+struct KeepUnder1GBAndUnder1KFiles : SimplePurgePolicy<1024 * 1024 * 1024, 1000> {};
 
 // Default retry strategy for the processing of finalized files.
 // On `Success`, processes files as they arrive without any delays.
