@@ -28,11 +28,11 @@ struct DummyFileNamingToUnblockAlexFromMinsk {
     FileNamingSchema(const std::string& prefix, const std::string& suffix) : prefix_(prefix), suffix_(suffix) {
     }
     template <typename T_TIMESTAMP>
-    inline std::string GenerateFileName(const T_TIMESTAMP timestamp) {
+    inline std::string GenerateFileName(const T_TIMESTAMP timestamp) const {
       return prefix_ + bricks::strings::PackToString(timestamp) + suffix_;
     }
     template <typename T_TIMESTAMP>
-    inline bool ParseFileName(const std::string& filename, T_TIMESTAMP* output_timestamp) {
+    inline bool ParseFileName(const std::string& filename, T_TIMESTAMP* output_timestamp) const {
       if ((filename.length() ==
            prefix_.length() + bricks::strings::FixedSizeSerializer<T_TIMESTAMP>::size_in_bytes +
                suffix_.length()) &&

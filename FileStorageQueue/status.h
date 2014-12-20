@@ -13,13 +13,20 @@ template <typename TIMESTAMP>
 struct FileInfo {
   typedef TIMESTAMP T_TIMESTAMP;
   std::string name = std::string("");
+  std::string full_path_name = std::string("");
   T_TIMESTAMP timestamp = T_TIMESTAMP(0);
   uint64_t size = 0;
-  FileInfo(const std::string& name, T_TIMESTAMP timestamp, uint64_t size)
-      : name(name), timestamp(timestamp), size(size) {
+  FileInfo(const std::string& name, const std::string& full_path_name, T_TIMESTAMP timestamp, uint64_t size)
+      : name(name), full_path_name(full_path_name), timestamp(timestamp), size(size) {
+  }
+  inline std::tuple<T_TIMESTAMP, std::string, std::string, uint64_t> AsTuple() const {
+    return std::tie(timestamp, name, full_path_name, size);
+  }
+  inline bool operator==(const FileInfo& rhs) const {
+    return AsTuple() == rhs.AsTuple();
   }
   inline bool operator<(const FileInfo& rhs) const {
-    return std::tie(timestamp, name) < std::tie(rhs.timestamp, rhs.name);
+    return AsTuple() < rhs.AsTuple();
   }
 };
 

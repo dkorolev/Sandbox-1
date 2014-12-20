@@ -8,14 +8,9 @@
 #include "../Bricks/file/file.h"
 
 struct MinimalisticProcessor {
-  template <typename T_TIMESTAMP, typename T_TIME_SPAN>
-  fsq::FileProcessingResult OnFileReady(const std::string& file_name,
-                                        const std::string& /*file_base_name*/,
-                                        uint64_t /*size*/,
-                                        T_TIMESTAMP /*created*/,
-                                        T_TIME_SPAN /*age*/,
-                                        T_TIMESTAMP /*now*/) {
-    std::cerr << file_name << std::endl << bricks::ReadFileAsString(file_name) << std::endl;
+  template <typename T_TIMESTAMP>
+  fsq::FileProcessingResult OnFileReady(const fsq::FileInfo<T_TIMESTAMP>& file, T_TIMESTAMP /*now*/) {
+    std::cerr << file.full_path_name << std::endl << bricks::ReadFileAsString(file.full_path_name) << std::endl;
     return fsq::FileProcessingResult::Success;
   }
 };
@@ -24,6 +19,6 @@ int main() {
   MinimalisticProcessor processor;
   fsq::FSQ<fsq::Config<MinimalisticProcessor>> fsq(processor, ".");
   fsq.PushMessage("Hello, World!\n");
-  fsq.ForceResumeProcessing();
+  fsq.ForceProcessing();
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
 }

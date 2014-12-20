@@ -30,8 +30,6 @@
 #ifndef FSQ_H
 #define FSQ_H
 
-#include <iostream>  // TODO(dkorolev): Remove it and cerr in prod.
-
 #include <cassert>  // TODO(dkorolev): Perhaps introduce exceptions instead of ASSERT-s?
 
 #include <algorithm>
@@ -78,6 +76,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   typedef QueueFinalizedFilesStatus<T_TIMESTAMP> FinalizedFilesStatus;
   typedef QueueStatus<T_TIMESTAMP> Status;
 
+  // The constructor initializes all the parameters and starts the worker thread.
   FSQ(T_PROCESSOR& processor,
       const std::string& working_directory,
       const T_TIME_MANAGER& time_manager = T_TIME_MANAGER(),
@@ -85,75 +84,130 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       : processor_(processor),
         working_directory_(working_directory),
         time_manager_(time_manager),
-        file_system_(file_system),
-        processor_thread_(&FSQ::ProcessorThread, this) {
+        file_system_(file_system) {
     T_CONFIG::Initialize(*this);
-    // TODO(dkorolev): Get current file name, timestamp and length.
+    worker_thread_ = std::thread(&FSQ::WorkerThread, this);
   }
 
+  // Destructor gracefully terminates worker thread and optionally joins it.
   ~FSQ() {
-    // Notify the thread that FSQ is being terminated.
+    // Notify the worker thread that it's time to wrap up.
     {
-      std::unique_lock<std::mutex> lock(mutex_);
-      destructing_ = true;
-      condition_variable_.notify_all();
+      std::unique_lock<std::mutex> lock(status_mutex_);
+      force_worker_thread_shutdown_ = true;
+      queue_status_condition_variable_.notify_all();
     }
-    // Close the current file.
+    // Close the current file. `current_file_.reset(nullptr);` is always safe especially in destructor.
     current_file_.reset(nullptr);
     // Either wait for the processor thread to terminate or detach it.
     if (T_CONFIG::DetachProcessingThreadOnTermination()) {
-      processor_thread_.detach();
+      worker_thread_.detach();
     } else {
-      processor_thread_.join();
+      worker_thread_.join();
     }
   }
 
+  // Getters.
+  const std::string& WorkingDirectory() const {
+    return working_directory_;
+  }
+
+  const Status GetQueueStatus() const {
+    // TODO(dkorolev): Wait until the 1st scan, running in a different thread, has finished.
+    std::unique_lock<std::mutex> lock(status_mutex_);
+    while (!status_ready_) {
+      queue_status_condition_variable_.wait(lock);
+      // TODO(dkorolev): Handle `force_worker_thread_shutdown_` here, throw an exception.
+    }
+    // Returning `status_` by const reference is not thread-safe, return a copy from a locked section.
+    return status_;
+  }
+
+  // `PushMessage()` appends data to the queue.
   void PushMessage(const T_MESSAGE& message) {
-    if (destructing_) {
-      // TODO(dkorolev): Chat with Alex. Exception?
+    if (force_worker_thread_shutdown_) {
+      // TODO(dkorolev): Throw an exception.
       return;
     } else {
       const T_TIMESTAMP now = time_manager_.Now();
       const uint64_t message_size_in_bytes = T_FILE_APPEND_POLICY::MessageSizeInBytes(message);
       EnsureCurrentFileIsOpen(message_size_in_bytes, now);
-      assert(current_file_.get());
+      assert(current_file_);
       assert(!current_file_->bad());
       T_FILE_APPEND_POLICY::AppendToFile(*current_file_.get(), message);
       status_.appended_file_size += message_size_in_bytes;
+      if (T_FINALIZE_POLICY::ShouldFinalize(status_, now)) {
+        FinalizeCurrentFile();
+      }
     }
   }
 
-  void ForceResumeProcessing() {
-    // TODO(dkorolev): Don't have to rename the current file unless it's the only one.
-    if (current_file_.get()) {
+  // `ForceProcessing()` initiates processing of finalized files, if any.
+  // It is most commonly used to resume processing due to an externla event
+  // when it was suspended due to an `Unavailable` response from user processing code.
+  // Real life scenario: User code returns `Unavailable` due to the device going offline,
+  // all processing stops w/o retry policy being applied, `ForceProcessing()` is called
+  // to resume processing on an external event of the device being back online.
+  void ForceProcessing(bool force_finalize_current_file = false) {
+    std::unique_lock<std::mutex> lock(status_mutex_);
+    if (force_finalize_current_file || status_.finalized.queue.empty()) {
+      if (current_file_) {
+        FinalizeCurrentFile(lock);
+      }
+    }
+    force_processing_ = true;
+    queue_status_condition_variable_.notify_all();
+  }
+
+  // Removes all finalized and current files from disk.
+  // USE CAREFULLY!
+  void RemoveAllFSQFiles() const {
+    for (const auto& file : ScanDir([this](const std::string& s, T_TIMESTAMP* t) {
+           return T_FILE_NAMING_STRATEGY::finalized.ParseFileName(s, t);
+         })) {
+      T_FILE_SYSTEM::RemoveFile(file.full_path_name);
+    }
+    for (const auto& file : ScanDir([this](const std::string& s, T_TIMESTAMP* t) {
+           return T_FILE_NAMING_STRATEGY::current.ParseFileName(s, t);
+         })) {
+      T_FILE_SYSTEM::RemoveFile(file.full_path_name);
+    }
+  }
+
+ private:
+  // If the current file exists, declare it finalized, rename it under a permanent name
+  // and notify the worker thread that a new file is available.
+  void FinalizeCurrentFile(std::unique_lock<std::mutex>& already_acquired_status_mutex_lock) {
+    static_cast<void>(already_acquired_status_mutex_lock);
+    if (current_file_) {
       current_file_.reset(nullptr);
+      const std::string finalized_file_name =
+          T_FILE_NAMING_STRATEGY::finalized.GenerateFileName(status_.appended_file_timestamp);
+      FileInfo<T_TIMESTAMP> finalized_file_info(
+          finalized_file_name,
+          T_FILE_SYSTEM::JoinPath(working_directory_, finalized_file_name),
+          status_.appended_file_timestamp,
+          status_.appended_file_size);
+      T_FILE_SYSTEM::RenameFile(current_file_name_, finalized_file_info.full_path_name);
+      status_.finalized.queue.push_back(finalized_file_info);
       status_.appended_file_size = 0;
       status_.appended_file_timestamp = T_TIMESTAMP(0);
-      const std::string finalized_file_name = T_FILE_SYSTEM::JoinPath(
-          working_directory_, T_FILE_NAMING_STRATEGY::finalized.GenerateFileName(current_file_creation_time_));
-      T_FILE_SYSTEM::RenameFile(current_file_name_, finalized_file_name);
       current_file_name_.clear();
-    }
-    {
-      std::unique_lock<std::mutex> lock(mutex_);
-      has_new_file_ = true;
-      condition_variable_.notify_all();
+      queue_status_condition_variable_.notify_all();
     }
   }
 
-  const std::string& WorkingDirectory() const {
-    return working_directory_;
-  }
-
-  const Status& GetQueueStatus() const {
-    // TODO(dkorolev): Wait until the 1st scan, running in a different thread, has finished.
-    return status_;
+  void FinalizeCurrentFile() {
+    if (current_file_) {
+      std::unique_lock<std::mutex> lock(status_mutex_);
+      FinalizeCurrentFile(lock);
+    }
   }
 
   // Scans the directory for the files that match certain predicate.
   // Gets their sized and and extracts timestamps from their names along the way.
   template <typename F>
-  std::vector<FileInfo<T_TIMESTAMP>> ScanDir(F f) {
+  std::vector<FileInfo<T_TIMESTAMP>> ScanDir(F f) const {
     std::vector<FileInfo<T_TIMESTAMP>> matched_files_list;
     const auto& dir = working_directory_;
     T_FILE_SYSTEM::ScanDir(working_directory_,
@@ -161,93 +215,104 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       // if (T_FILE_NAMING_STRATEGY::template IsFinalizedFileName<T_TIMESTAMP>(file_name)) {
       T_TIMESTAMP timestamp;
       if (f(file_name, &timestamp)) {
-        matched_files_list.emplace_back(
-            file_name, timestamp, T_FILE_SYSTEM::GetFileSize(T_FILE_SYSTEM::JoinPath(dir, file_name)));
+        matched_files_list.emplace_back(file_name,
+                                        T_FILE_SYSTEM::JoinPath(working_directory_, file_name),
+                                        timestamp,
+                                        T_FILE_SYSTEM::GetFileSize(T_FILE_SYSTEM::JoinPath(dir, file_name)));
       }
     });
     std::sort(matched_files_list.begin(), matched_files_list.end());
     return matched_files_list;
   }
 
- private:
   // ValidateCurrentFiles() expires the current file and/or creates the new one as necessary.
-  void EnsureCurrentFileIsOpen(const uint64_t /*message_size_in_bytes*/, const T_TIMESTAMP now) {
-    // TODO(dkorolev): Purge.
-    if (!current_file_.get()) {
-      current_file_name_ = working_directory_ + '/' + T_FILE_NAMING_STRATEGY::current.GenerateFileName(now);
+  void EnsureCurrentFileIsOpen(const uint64_t message_size_in_bytes, const T_TIMESTAMP now) {
+    static_cast<void>(message_size_in_bytes);  // TODO(dkorolev): Call purge, use `message_size_in_bytes`.
+    if (!current_file_) {
+      current_file_name_ =
+          T_FILE_SYSTEM::JoinPath(working_directory_, T_FILE_NAMING_STRATEGY::current.GenerateFileName(now));
       current_file_.reset(new typename T_FILE_SYSTEM::OutputFile(current_file_name_));
-      current_file_creation_time_ = now;
+      status_.appended_file_timestamp = now;
     }
   }
 
-  void ProcessorThread() {
-    // Get the list of current files.
-    const std::vector<FileInfo<T_TIMESTAMP>>& current_files_on_disk = ScanDir([this](
-        const std::string& s, T_TIMESTAMP* t) { return T_FILE_NAMING_STRATEGY::current.ParseFileName(s, t); });
-    for (const auto& f : current_files_on_disk) {
-      std::cerr << "CURRENT: " << f.name << std::endl;
+  // The worker thread first scans the directory for present finalized and current files.
+  // Present finalized files are queued up.
+  // If more than one present current files is available, all but one are finalized on the spot.
+  // The one remaining current file can be appended to or finalized depending on the strategy.
+  void WorkerThread() {
+    // Step 1/4: Get the list of finalized files.
+    const std::vector<FileInfo<T_TIMESTAMP>>& finalized_files_on_disk =
+        ScanDir([this](const std::string& s,
+                       T_TIMESTAMP* t) { return T_FILE_NAMING_STRATEGY::finalized.ParseFileName(s, t); });
+    status_.finalized.queue.assign(finalized_files_on_disk.begin(), finalized_files_on_disk.end());
+    status_.finalized.total_size = 0;
+    for (const auto& file : finalized_files_on_disk) {
+      status_.finalized.total_size += file.size;
     }
 
+    // Step 2/4: Get the list of current files.
+    const std::vector<FileInfo<T_TIMESTAMP>>& current_files_on_disk = ScanDir([this](
+        const std::string& s, T_TIMESTAMP* t) { return T_FILE_NAMING_STRATEGY::current.ParseFileName(s, t); });
+    // TODO(dkorolev): Finalize all or all but one `current` files. Rename them and append them to the queue.
+    static_cast<void>(current_files_on_disk);
+
+    // Step 3/4: Signal that FSQ's status has been successfully parsed from disk and FSQ is ready to go.
+    {
+      std::unique_lock<std::mutex> lock(status_mutex_);
+      status_ready_ = true;
+      queue_status_condition_variable_.notify_all();
+    }
+
+    // Step 4/4: Start processing finalized files via T_PROCESSOR, respecting retry policy.
     while (true) {
-      // TODO(dkorolev): Code and test file scan and processing.
+      // Wait for a newly arrived file or another event to happen.
+      std::unique_ptr<FileInfo<T_TIMESTAMP>> next_file;
       {
-        std::unique_lock<std::mutex> lock(mutex_);
-        if (destructing_) {
-          return;
-        }
-      }
-
-      {
-        std::unique_lock<std::mutex> lock(mutex_);
-
-        // TODO(dkorolev): Add retransmission delay here.
-        if (!has_new_file_) {
-          condition_variable_.wait(lock);
-        }
-      }
-
-      {
-        if (destructing_) {
-          return;
-        }
-
-        {
-          std::unique_lock<std::mutex> lock(mutex_);
-          has_new_file_ = false;
-        }
-
-        // Don't use std::bind() for possible static functions.
-        const std::vector<FileInfo<T_TIMESTAMP>>& files_on_disk =
-            ScanDir([this](const std::string& s,
-                           T_TIMESTAMP* t) { return T_FILE_NAMING_STRATEGY::finalized.ParseFileName(s, t); });
-
-        {
-          // TODO(dkorolev): Locked.
-          status_.finalized.queue.assign(files_on_disk.begin(), files_on_disk.end());
-          status_.finalized.total_size = 0;
-          for (const auto& file : status_.finalized.queue) {
-            status_.finalized.total_size += file.size;
+        std::unique_lock<std::mutex> lock(status_mutex_);
+        auto predicate = [this]() {
+          if (force_worker_thread_shutdown_) {
+            return true;
+          } else if (force_processing_) {
+            return true;
+          } else if (!status_.finalized.queue.empty()) {
+            return true;
+          } else {
+            return false;
           }
+        };
+        if (!predicate()) {
+          queue_status_condition_variable_.wait(lock, predicate);
         }
-
+        if (force_worker_thread_shutdown_) {
+          // TODO(dkorolev): Graceful shutdown logic.
+          return;
+        }
         if (!status_.finalized.queue.empty()) {
-          const T_TIMESTAMP now = time_manager_.Now();
-          const FileInfo<T_TIMESTAMP>& file = status_.finalized.queue.back();
-          const FileProcessingResult result =
-              processor_.template OnFileReady<T_TIMESTAMP, T_TIME_SPAN>(working_directory_ + '/' + file.name,
-                                                                        file.name,
-                                                                        file.size,
-                                                                        file.timestamp,
-                                                                        now - file.timestamp,
-                                                                        now);
-          static_cast<void>(result);
+          next_file.reset(new FileInfo<T_TIMESTAMP>(status_.finalized.queue.front()));
         }
       }
-      // TODO(dkorolev): If ready to accept, process data from the new file.
+
+      // Process the file, if available.
+      if (next_file) {
+        const FileProcessingResult result = processor_.OnFileReady(*next_file.get(), time_manager_.Now());
+        static_cast<void>(result);  // TODO(dkorolev): Insert retry logic here.
+        if (true) {
+          std::unique_lock<std::mutex> lock(status_mutex_);
+          assert(*next_file.get() == status_.finalized.queue.front());
+          status_.finalized.queue.pop_front();
+        }
+      }
     }
   }
 
   Status status_;
+  // Appending messages is single-threaded and thus lock-free.
+  // The status of the processing queue, on the other hand, should be guarded.
+  mutable std::mutex status_mutex_;
+  // Set to true and pings the variable once the initial directory scan is completed.
+  bool status_ready_ = false;
+  mutable std::condition_variable queue_status_condition_variable_;
 
   T_PROCESSOR& processor_;
   std::string working_directory_;
@@ -256,13 +321,10 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
 
   std::unique_ptr<typename T_FILE_SYSTEM::OutputFile> current_file_;
   std::string current_file_name_;
-  T_TIMESTAMP current_file_creation_time_;
 
-  std::thread processor_thread_;
-  std::mutex mutex_;
-  std::condition_variable condition_variable_;
-  bool has_new_file_ = false;
-  bool destructing_ = false;
+  std::thread worker_thread_;
+  bool force_processing_ = false;
+  bool force_worker_thread_shutdown_ = false;
 
   FSQ(const FSQ&) = delete;
   FSQ(FSQ&&) = delete;

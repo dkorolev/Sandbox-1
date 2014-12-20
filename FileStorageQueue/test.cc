@@ -16,15 +16,10 @@ const char* const kTestDir = "build/";
 struct TestOutputFilesProcessor {
   TestOutputFilesProcessor() : finalized_count(0) {
   }
-  template <typename T_TIMESTAMP, typename T_TIME_SPAN>
-  fsq::FileProcessingResult OnFileReady(const std::string& file_name,
-                                        const std::string& file_base_name,
-                                        uint64_t /*size*/,
-                                        T_TIMESTAMP /*created*/,
-                                        T_TIME_SPAN /*age*/,
-                                        T_TIMESTAMP /*now*/) {
-    filename = file_base_name;
-    contents = bricks::ReadFileAsString(file_name);
+  fsq::FileProcessingResult OnFileReady(const fsq::FileInfo<uint64_t>& file_info, uint64_t now) {
+    filename = file_info.name;
+    contents = bricks::ReadFileAsString(file_info.full_path_name);
+    timestamp = now;
     finalized_count = true;
     return fsq::FileProcessingResult::Success;
   }
@@ -32,6 +27,7 @@ struct TestOutputFilesProcessor {
   atomic_size_t finalized_count;
   string filename = "";
   string contents = "";
+  uint64_t timestamp = 0;
 };
 
 struct MockTime {
@@ -61,17 +57,53 @@ struct MockConfig : fsq::Config<TestOutputFilesProcessor> {
   // Non-static initialization.
   template <typename T_FSQ_INSTANCE>
   static void Initialize(T_FSQ_INSTANCE& instance) {
+    instance.RemoveAllFSQFiles();
     instance.SetSeparator("\n");
   }
 };
 
 typedef fsq::FSQ<MockConfig> FSQ;
 
-TEST(FileSystemQueueTest, SimpleSmokeTest) {
+// Observe messages being processed as they exceed 20 bytes of size.
+TEST(FileSystemQueueTest, FinalizedBySize) {
   TestOutputFilesProcessor processor;
   MockTime mock_wall_time;
   FSQ fsq(processor, kTestDir, mock_wall_time);
-  //  fsq.SetSeparator("\n");
+
+  // Confirm the queue is empty.
+  EXPECT_EQ(0ull, fsq.GetQueueStatus().appended_file_size);
+  EXPECT_EQ(0u, fsq.GetQueueStatus().finalized.queue.size());
+  EXPECT_EQ(0ul, fsq.GetQueueStatus().finalized.total_size);
+
+  // Add a few entries.
+  mock_wall_time.now = 101;
+  fsq.PushMessage("this is");
+  mock_wall_time.now = 102;
+  fsq.PushMessage("a test");
+  mock_wall_time.now = 103;
+
+  // Confirm the queue is still empty.
+  EXPECT_EQ(15ull, fsq.GetQueueStatus().appended_file_size);  // 15 == strlen("this is\na test\n").
+  EXPECT_EQ(0u, fsq.GetQueueStatus().finalized.queue.size());
+  EXPECT_EQ(0ul, fsq.GetQueueStatus().finalized.total_size);
+  EXPECT_EQ(0, processor.finalized_count);
+
+  fsq.PushMessage("now go ahead and process this stuff");
+  while (!processor.finalized_count) {
+    ;  // Spin lock.
+  }
+
+  EXPECT_EQ(1, processor.finalized_count);
+  EXPECT_EQ("finalized-00000000000000000101.bin", processor.filename);
+  EXPECT_EQ("this is\na test\nnow go ahead and process this stuff\n", processor.contents);
+  EXPECT_EQ(103ull, processor.timestamp);
+}
+
+// Pushes a few messages and force their processing.
+TEST(FileSystemQueueTest, ForceProcessing) {
+  TestOutputFilesProcessor processor;
+  MockTime mock_wall_time;
+  FSQ fsq(processor, kTestDir, mock_wall_time);
 
   // Confirm the queue is empty.
   EXPECT_EQ(0ull, fsq.GetQueueStatus().appended_file_size);
@@ -85,7 +117,6 @@ TEST(FileSystemQueueTest, SimpleSmokeTest) {
   fsq.PushMessage("bar");
   mock_wall_time.now = 1003;
   fsq.PushMessage("baz");
-  mock_wall_time.now = 1010;
 
   // Confirm the queue is empty.
   EXPECT_EQ(12ull, fsq.GetQueueStatus().appended_file_size);  // Three messages of (3 + '\n') bytes each.
@@ -93,13 +124,15 @@ TEST(FileSystemQueueTest, SimpleSmokeTest) {
   EXPECT_EQ(0ul, fsq.GetQueueStatus().finalized.total_size);
 
   // Force entries processing to have three freshly added ones reach our TestOutputFilesProcessor.
-  fsq.ForceResumeProcessing();
+  fsq.ForceProcessing();
   while (!processor.finalized_count) {
     ;  // Spin lock.
   }
 
+  EXPECT_EQ(1, processor.finalized_count);
   EXPECT_EQ("finalized-00000000000000001001.bin", processor.filename);
   EXPECT_EQ("foo\nbar\nbaz\n", processor.contents);
+  EXPECT_EQ(1003ull, processor.timestamp);
 }
 
 /*
@@ -114,5 +147,6 @@ TEST(FileSystemQueueTest, Rename the current file right away if it should be ren
 TEST(FileSystemQueueTest, Time skew.);
 TEST(FileSystemQueueTest, Custom finalize strategy.);
 TEST(FileSystemQueueTest, Custom append strategy.);
+TEST(FileSystemQueueTest, ConfirmProcessingTakesPlaceBeforeNewFileIsCreated);
 
 */
