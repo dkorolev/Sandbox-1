@@ -131,7 +131,7 @@ struct FileSystem {
     auto closedir_guard = MakeScopeGuard([dir]() { ::closedir(dir); });
     if (dir) {
       while (struct dirent* entry = ::readdir(dir)) {
-        if (entry->d_name && *entry->d_name && strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) {
+        if (*entry->d_name && strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) {
           if (!lambda(entry->d_name)) {
             return;
           }

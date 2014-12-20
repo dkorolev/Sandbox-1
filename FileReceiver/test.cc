@@ -64,6 +64,8 @@ DEFINE_int32(local_port, 8089, "Local port to listen to uploaded file events on.
 DEFINE_string(local_http_path, "/file_uploaded", "Local HTTP path triggered as a new file is uploaded.");
 DEFINE_string(uploads_directory, "/home/www-data/uploads", "Local directory where uploaded files will appear.");
 DEFINE_int64(dir_poll_period_ms, 100, "Number of milliseconds between explicit directory polling.");
+DEFINE_string(full_file_name_http_header, "X-FILE", "The name of HTTP header nginx uses for file name.");
+DEFINE_string(content_type_http_header, "Content-Type", "The name of HTTP header content type is passed in.");
 
 TEST(ArchitectureTest, BRICKS_ARCH_UNAME_AS_IDENTIFIER) {
   ASSERT_EQ(BRICKS_ARCH_UNAME, FLAGS_expected_arch);
@@ -111,6 +113,13 @@ class FileReceiveServer {
         cv_.notify_all();
       } else if (url == FLAGS_local_http_path) {
         ++number_of_upload_requests_received_;
+        const std::map<std::string, std::string>& headers = message.headers;
+        auto cit_full_file_name = headers.find(FLAGS_full_file_name_http_header);
+        auto cit_content_type = headers.find(FLAGS_content_type_http_header);
+        if (cit_full_file_name != headers.end() && cit_content_type != headers.end()) {
+          std::cerr << "RECEIVED: " << cit_full_file_name->second << ' ' << cit_content_type->second
+                    << std::endl;
+        }
         connection.SendHTTPResponse("RECEIVED\n", HTTPResponseCode::Accepted);
         // TODO(dkorolev) + TODO(deathbaba): See whether newly uploaded file name can be extracted.
         cv_.notify_all();
@@ -133,10 +142,10 @@ class FileReceiveServer {
         return false;
       });
       if (!filename.empty()) {
-        std::cerr << filename << std::endl;
+        std::cerr << "SCANNED: " << filename << std::endl;
         filename = bricks::FileSystem::JoinPath(FLAGS_uploads_directory, filename);
-        std::cerr << filename << std::endl;
-        std::cerr << bricks::ReadFileAsString(filename) << std::endl;
+        std::cerr << "SCANNED FULL PATH: " << filename << std::endl;
+        std::cerr << "CONENTS: " << bricks::ReadFileAsString(filename) << std::endl;
         ++number_of_files_scanned_;
         bricks::RemoveFile(filename);
       }
@@ -157,11 +166,11 @@ class FileReceiveServer {
 TEST(FileReceiverTest, UploadFileViaNginx) {
   FileReceiveServer scoped_server;
 
-  EXPECT_EQ(0, scoped_server.NumberOfUploadRequestsReceived());
-  const auto response = HTTP(POST(FLAGS_upload_url, "TestUpload\n", "application/some-magic-type"));
+  EXPECT_EQ(0u, scoped_server.NumberOfUploadRequestsReceived());
+  const auto response = HTTP(POST(FLAGS_upload_url, "UploadedViaNginx\n", "application/some-magic-type"));
   EXPECT_EQ(202, response.code);
-  EXPECT_EQ(1, scoped_server.NumberOfUploadRequestsReceived());
-  while (scoped_server.NumberOfFilesScanned() != 1) {
+  EXPECT_EQ(1u, scoped_server.NumberOfUploadRequestsReceived());
+  while (scoped_server.NumberOfFilesScanned() != 1u) {
     ;  // Spin lock;
   }
 }
@@ -170,8 +179,8 @@ TEST(FileReceiverTest, DirectoryIsAlsoScannedIndependently) {
   FileReceiveServer scoped_server;
 
   bricks::WriteStringToFile(bricks::FileSystem::JoinPath(FLAGS_uploads_directory, "testfile"), "MammaMia");
-  EXPECT_EQ(0, scoped_server.NumberOfUploadRequestsReceived());
-  while (scoped_server.NumberOfFilesScanned() != 1) {
+  EXPECT_EQ(0u, scoped_server.NumberOfUploadRequestsReceived());
+  while (scoped_server.NumberOfFilesScanned() != 1u) {
     ;  // Spin lock;
   }
 }
