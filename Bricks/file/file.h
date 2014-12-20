@@ -1,4 +1,5 @@
 // TODO(dkorolev): Add unit tests.
+// TODO(dkorolev): Move everything under bricks::file::FileSystem and have all the tests pass.
 
 #ifndef BRICKS_FILE_FILE_H
 #define BRICKS_FILE_FILE_H
@@ -30,6 +31,7 @@ SOFTWARE.
 
 #include <fstream>
 #include <string>
+#include <cstring>
 
 #include <dirent.h>
 #include <sys/stat.h>
@@ -122,13 +124,23 @@ struct FileSystem {
     bricks::RemoveFile(file_name, parameters);
   }
 
-  static void ScanDir(const std::string& directory, std::function<void(const std::string&)> lambda) {
-    DIR* dir = opendir(directory.c_str());
+  static void ScanDirUntil(const std::string& directory, std::function<bool(const std::string&)> lambda) {
+    DIR* dir = ::opendir(directory.c_str());
     if (dir) {
-      while (struct dirent* entry = readdir(dir)) {
-        lambda(entry->d_name);
+      while (struct dirent* entry = ::readdir(dir)) {
+        if (entry->d_name && *entry->d_name && strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) {
+          if (!lambda(entry->d_name)) {
+            ::closedir(dir);
+            return;
+          }
+        }
       }
     }
+    ::closedir(dir);
+  }
+
+  static void ScanDir(const std::string& directory, std::function<void(const std::string&)> lambda) {
+    ScanDirUntil(directory, [lambda](const std::string& filename) { lambda(filename); return true; });
   }
 
   static uint64_t GetFileSize(const std::string& file_name) {
