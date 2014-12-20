@@ -45,6 +45,9 @@ const char* const kTransferEncodingChunkedValue = "chunked";
 class HTTPDefaultHelper {
  public:
   typedef std::map<std::string, std::string> headers_type;
+  const headers_type& headers() const {
+    return headers_;
+  }
 
  protected:
   inline void OnHeader(const char* key, const char* value) {
@@ -63,10 +66,6 @@ class HTTPDefaultHelper {
  private:
   headers_type headers_;
   std::string body_;
-
- public:
-  const ReadOnlyByConstRefFieldAccessor<headers_type> headers =
-      ReadOnlyByConstRefFieldAccessor<headers_type>(headers_);
 };
 
 // In constructor, TemplatedHTTPReceivedMessage parses HTTP response from `Connection&` is was provided with.

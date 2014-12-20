@@ -113,7 +113,7 @@ class FileReceiveServer final {
         cv_.notify_all();
       } else if (url == FLAGS_local_http_path) {
         ++number_of_upload_requests_received_;
-        const std::map<std::string, std::string>& headers = message.headers;
+        const std::map<std::string, std::string>& headers = message.headers();
         auto cit_full_file_name = headers.find(FLAGS_full_file_name_http_header);
         auto cit_content_type = headers.find(FLAGS_content_type_http_header);
         if (cit_full_file_name != headers.end() && cit_content_type != headers.end()) {
