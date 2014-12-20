@@ -51,7 +51,7 @@ struct FSQException : std::exception {
   // TODO(dkorolev): Fill this class.
 };
 
-enum class FileProcessingResult { Success, SuccessAndMoved, Unavailable, FailureNeerRetry };
+enum class FileProcessingResult { Success, SuccessAndMoved, Unavailable, FailureNeedRetry };
 
 template <class CONFIG>
 class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,

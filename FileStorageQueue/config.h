@@ -40,7 +40,7 @@ struct Config {
     return true;
   }
 
-  // Set to true to have FSQ process all queued files in destuctor before returning.
+  // Set to true to have FSQ process all queued files in destructor before returning.
   static bool ProcessQueueToTheEndOnShutdown() {
     return false;
   }
