@@ -156,7 +156,6 @@ class FileReceiveServer {
 
 TEST(FileReceiverTest, UploadFileViaNginx) {
   FileReceiveServer scoped_server;
-  static_cast<void>(scoped_server);
 
   EXPECT_EQ(0, scoped_server.NumberOfUploadRequestsReceived());
   const auto response = HTTP(POST(FLAGS_upload_url, "TestUpload\n", "application/some-magic-type"));
@@ -169,7 +168,6 @@ TEST(FileReceiverTest, UploadFileViaNginx) {
 
 TEST(FileReceiverTest, DirectoryIsAlsoScannedIndependently) {
   FileReceiveServer scoped_server;
-  static_cast<void>(scoped_server);
 
   bricks::WriteStringToFile(bricks::FileSystem::JoinPath(FLAGS_uploads_directory, "testfile"), "MammaMia");
   EXPECT_EQ(0, scoped_server.NumberOfUploadRequestsReceived());
@@ -180,7 +178,6 @@ TEST(FileReceiverTest, DirectoryIsAlsoScannedIndependently) {
 
 TEST(FileReceiverTest, Healthz) {
   FileReceiveServer scoped_server;
-  static_cast<void>(scoped_server);
 
   const auto response = HTTP(GET(bricks::strings::Printf("http://localhost:%d/healthz", FLAGS_local_port)));
   EXPECT_EQ(200, response.code);
