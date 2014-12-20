@@ -71,7 +71,7 @@ TEST(ArchitectureTest, BRICKS_ARCH_UNAME_AS_IDENTIFIER) {
   ASSERT_EQ(BRICKS_ARCH_UNAME, FLAGS_expected_arch);
 }
 
-class FileReceiveServer {
+class FileReceiveServer final {
  public:
   FileReceiveServer()
       : web_thread_(&FileReceiveServer::ThreadWeb, this, Socket(FLAGS_local_port)),
