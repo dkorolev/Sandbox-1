@@ -44,8 +44,8 @@ const char* const kTransferEncodingChunkedValue = "chunked";
 // TODO(dkorolev): This is not yet the case, but will be soon once I fix HTTP parse code.
 class HTTPDefaultHelper {
  public:
-  typedef std::map<std::string, std::string> headers_type;
-  const headers_type& headers() const {
+  typedef std::map<std::string, std::string> HeadersType;
+  const HeadersType& headers() const {
     return headers_;
   }
 
@@ -64,7 +64,7 @@ class HTTPDefaultHelper {
   }
 
  private:
-  headers_type headers_;
+  HeadersType headers_;
   std::string body_;
 };
 
