@@ -43,6 +43,9 @@ const char* const kTransferEncodingChunkedValue = "chunked";
 // One can inject a custom implementaion of it to avoid keeping all HTTP body in memory.
 // TODO(dkorolev): This is not yet the case, but will be soon once I fix HTTP parse code.
 class HTTPDefaultHelper {
+ public:
+  typedef std::map<std::string, std::string> headers_type;
+
  protected:
   inline void OnHeader(const char* key, const char* value) {
     headers_[key] = value;
@@ -58,8 +61,12 @@ class HTTPDefaultHelper {
   }
 
  private:
-  std::map<std::string, std::string> headers_;
+  headers_type headers_;
   std::string body_;
+
+ public:
+  const ReadOnlyByConstRefFieldAccessor<headers_type> headers =
+      ReadOnlyByConstRefFieldAccessor<headers_type>(headers_);
 };
 
 // In constructor, TemplatedHTTPReceivedMessage parses HTTP response from `Connection&` is was provided with.
