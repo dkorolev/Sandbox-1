@@ -7,6 +7,7 @@
 The MIT License (MIT)
 
 Copyright (c) 2014 Alexander Zolotarev <me@alex.bio> from Minsk, Belarus
+          (c) 2014 Dmitry "Dima" Korolev <dmitry.korolev@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
