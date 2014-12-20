@@ -4,7 +4,8 @@
 //
 // 1.1) accept files uploaded via POST to a certain URL, defaults to localhost:8088/upload,
 // 1.2) collecting uploaded files in certain directory, defaults to /home/www-data/uploads,
-// 1.3) proxy-pass those requests to another URL on cerain port, defaults to localhost:8089/file_uploaded.
+// 1.3) proxy-pass those requests to another URL on certain port, defaults to localhost:8089/file_uploaded.
+// 1.4) set a special header with full path to the newly uploaded file, defautls to X-FILE.
 //
 // 2) this test invoked in a way that has access to those files.
 //    running it from a `www-data` username did the trick for me -- D.K.
