@@ -38,6 +38,8 @@ SOFTWARE.
 
 #include "exceptions.h"
 
+#include "../util/make_scope_guard.h"
+
 namespace bricks {
 
 inline std::string ReadFileAsString(std::string const& file_name) {
@@ -126,21 +128,23 @@ struct FileSystem {
 
   static void ScanDirUntil(const std::string& directory, std::function<bool(const std::string&)> lambda) {
     DIR* dir = ::opendir(directory.c_str());
+    auto closedir_guard = MakeScopeGuard([dir]() { ::closedir(dir); });
     if (dir) {
       while (struct dirent* entry = ::readdir(dir)) {
         if (entry->d_name && *entry->d_name && strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) {
           if (!lambda(entry->d_name)) {
-            ::closedir(dir);
             return;
           }
         }
       }
     }
-    ::closedir(dir);
   }
 
   static void ScanDir(const std::string& directory, std::function<void(const std::string&)> lambda) {
-    ScanDirUntil(directory, [lambda](const std::string& filename) { lambda(filename); return true; });
+    ScanDirUntil(directory, [lambda](const std::string& filename) {
+      lambda(filename);
+      return true;
+    });
   }
 
   static uint64_t GetFileSize(const std::string& file_name) {
