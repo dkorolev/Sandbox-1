@@ -115,11 +115,12 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   }
 
   const Status GetQueueStatus() const {
-    // TODO(dkorolev): Wait until the 1st scan, running in a different thread, has finished.
     std::unique_lock<std::mutex> lock(status_mutex_);
     while (!status_ready_) {
       queue_status_condition_variable_.wait(lock);
-      // TODO(dkorolev): Handle `force_worker_thread_shutdown_` here, throw an exception.
+      if (force_worker_thread_shutdown_) {
+        throw FSQException();
+      }
     }
     // Returning `status_` by const reference is not thread-safe, return a copy from a locked section.
     return status_;
@@ -128,8 +129,12 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   // `PushMessage()` appends data to the queue.
   void PushMessage(const T_MESSAGE& message) {
     if (force_worker_thread_shutdown_) {
-      // TODO(dkorolev): Throw an exception.
-      return;
+      if (T_CONFIG::NoThrowOnPushMessageWhileShuttingDown()) {
+        // Silently ignoring incoming messages while in shutdown mode is the default strategy.
+        return;
+      } else {
+        throw FSQException();
+      }
     } else {
       const T_TIMESTAMP now = time_manager_.Now();
       const uint64_t message_size_in_bytes = T_FILE_APPEND_POLICY::MessageSizeInBytes(message);
@@ -274,7 +279,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       {
         std::unique_lock<std::mutex> lock(status_mutex_);
         auto predicate = [this]() {
-          if (force_worker_thread_shutdown_) {
+          if (force_worker_thread_shutdown_ && !T_CONFIG::ProcessQueueToTheEndOnShutdown()) {
             return true;
           } else if (force_processing_) {
             return true;
@@ -284,15 +289,20 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
             return false;
           }
         };
+        // TODO(dkorolev): Retry delay should be handled here.
         if (!predicate()) {
           queue_status_condition_variable_.wait(lock, predicate);
         }
-        if (force_worker_thread_shutdown_) {
-          // TODO(dkorolev): Graceful shutdown logic.
-          return;
-        }
         if (!status_.finalized.queue.empty()) {
           next_file.reset(new FileInfo<T_TIMESTAMP>(status_.finalized.queue.front()));
+        }
+        if (force_worker_thread_shutdown_) {
+          // By default, terminate immediately.
+          // However, allow the user to override this setting and have the queue
+          // processed in full before returning from FSQ's destructor.
+          if (!T_CONFIG::ProcessQueueToTheEndOnShutdown() || !next_file) {
+            return;
+          }
         }
       }
 

@@ -30,7 +30,18 @@ struct Config {
   template <class TIME_MANAGER, class FILE_SYSTEM>
   using T_RETRY_POLICY = strategy::RetryExponentially<TIME_MANAGER, FILE_SYSTEM>;
 
+  // Set to true to have FSQ detach the processing thread instead of joining it in destructor.
   static bool DetachProcessingThreadOnTermination() {
+    return false;
+  }
+
+  // Set to false to have PushMessage() throw an exception when attempted to push while shutting down.
+  static bool NoThrowOnPushMessageWhileShuttingDown() {
+    return true;
+  }
+
+  // Set to true to have FSQ process all queued files in destuctor before returning.
+  static bool ProcessQueueToTheEndOnShutdown() {
     return false;
   }
 
