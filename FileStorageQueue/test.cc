@@ -88,6 +88,7 @@ TEST(FileSystemQueueTest, FinalizedBySize) {
   EXPECT_EQ(0ul, fsq.GetQueueStatus().finalized.total_size);
   EXPECT_EQ(0, processor.finalized_count);
 
+  // Add another message that would make current file exceed 20 bytes.
   fsq.PushMessage("now go ahead and process this stuff");
   while (!processor.finalized_count) {
     ;  // Spin lock.
@@ -97,6 +98,43 @@ TEST(FileSystemQueueTest, FinalizedBySize) {
   EXPECT_EQ("finalized-00000000000000000101.bin", processor.filename);
   EXPECT_EQ("this is\na test\nnow go ahead and process this stuff\n", processor.contents);
   EXPECT_EQ(103ull, processor.timestamp);
+}
+
+// Observe messages being processed as they get older than 10 seconds.
+TEST(FileSystemQueueTest, FinalizedByAge) {
+  TestOutputFilesProcessor processor;
+  MockTime mock_wall_time;
+  FSQ fsq(processor, kTestDir, mock_wall_time);
+
+  // Confirm the queue is empty.
+  EXPECT_EQ(0ull, fsq.GetQueueStatus().appended_file_size);
+  EXPECT_EQ(0u, fsq.GetQueueStatus().finalized.queue.size());
+  EXPECT_EQ(0ul, fsq.GetQueueStatus().finalized.total_size);
+
+  // Add a few entries.
+  mock_wall_time.now = 10000;
+  fsq.PushMessage("this too");
+  mock_wall_time.now = 10001;
+  fsq.PushMessage("shall");
+
+  // Confirm the queue is still empty.
+  EXPECT_EQ(15ull, fsq.GetQueueStatus().appended_file_size);  // 15 == strlen("this is\na test\n").
+  EXPECT_EQ(0u, fsq.GetQueueStatus().finalized.queue.size());
+  EXPECT_EQ(0ul, fsq.GetQueueStatus().finalized.total_size);
+  EXPECT_EQ(0, processor.finalized_count);
+
+  // Add another message and make the current file span an interval of more than 10 seconds.
+  mock_wall_time.now = 21000;
+  fsq.PushMessage("pass");
+
+  while (!processor.finalized_count) {
+    ;  // Spin lock.
+  }
+
+  EXPECT_EQ(1, processor.finalized_count);
+  EXPECT_EQ("finalized-00000000000000010000.bin", processor.filename);
+  EXPECT_EQ("this too\nshall\npass\n", processor.contents);
+  EXPECT_EQ(21000ull, processor.timestamp);
 }
 
 // Pushes a few messages and force their processing.

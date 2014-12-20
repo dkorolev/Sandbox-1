@@ -30,8 +30,6 @@
 #ifndef FSQ_H
 #define FSQ_H
 
-#include <cassert>  // TODO(dkorolev): Perhaps introduce exceptions instead of ASSERT-s?
-
 #include <algorithm>
 #include <condition_variable>
 #include <functional>
@@ -48,6 +46,10 @@
 #include "../Bricks/time/time.h"
 
 namespace fsq {
+
+struct FSQException : std::exception {
+  // TODO(dkorolev): Fill this class.
+};
 
 enum class FileProcessingResult { Success, SuccessAndMoved, Unavailable, FailureNeerRetry };
 
@@ -132,8 +134,9 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       const T_TIMESTAMP now = time_manager_.Now();
       const uint64_t message_size_in_bytes = T_FILE_APPEND_POLICY::MessageSizeInBytes(message);
       EnsureCurrentFileIsOpen(message_size_in_bytes, now);
-      assert(current_file_);
-      assert(!current_file_->bad());
+      if (!current_file_ || current_file_->bad()) {
+        throw FSQException();
+      }
       T_FILE_APPEND_POLICY::AppendToFile(*current_file_.get(), message);
       status_.appended_file_size += message_size_in_bytes;
       if (T_FINALIZE_POLICY::ShouldFinalize(status_, now)) {
@@ -299,8 +302,12 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
         static_cast<void>(result);  // TODO(dkorolev): Insert retry logic here.
         if (true) {
           std::unique_lock<std::mutex> lock(status_mutex_);
-          assert(*next_file.get() == status_.finalized.queue.front());
-          status_.finalized.queue.pop_front();
+          if (*next_file.get() == status_.finalized.queue.front()) {
+            status_.finalized.queue.pop_front();
+          } else {
+            // The `front()` part of the queue should only be altered by this worker thread.
+            throw FSQException();
+          }
         }
       }
     }
