@@ -51,6 +51,7 @@ struct FSQException : std::exception {
   // TODO(dkorolev): Fill this class.
 };
 
+// TODO(dkorolev): Add explanations.
 enum class FileProcessingResult { Success, SuccessAndMoved, Unavailable, FailureNeedRetry };
 
 template <class CONFIG>
