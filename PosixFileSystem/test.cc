@@ -5,8 +5,8 @@
 
 #include "posix_file_manager.h"
 
-#include "../3party/gtest/gtest.h"
-#include "../3party/gtest/gtest-main.h"
+#include "../Bricks/3party/gtest/gtest.h"
+#include "../Bricks/3party/gtest/gtest-main.h"
 
 TEST(PosixFileSystem, FileOperations) {
   PosixFileManager fs;
