@@ -66,8 +66,8 @@ struct UseUNIXTimeInMilliseconds final {
   }
 };
 
-// Default file finalization strategy: Keeps files under 100KB, if there is backlog,
-// in case of no backlog keep them under 10KB. Also manage maximum age before forced finalization:
+// Default file finalization strategy: Keeps files under 100KB, if there are files in the processing queue,
+// in case of no files waiting, keep them under 10KB. Also manage maximum age before forced finalization:
 // a maximum of 24 hours when there is backlog, a maximum of 10 minutes if there is no.
 template <typename TIMESTAMP,
           typename TIME_SPAN,
@@ -104,15 +104,15 @@ struct KeepFilesAround100KBUnlessNoBacklog
                                10 * 1024,
                                bricks::time::MILLISECONDS_INTERVAL(10 * 60 * 1000)> {};
 
-// Default file purge strategy: Keeps under 1K files of under 1GB of total volume.
+// Default file purge strategy: Keeps under 1K files of under 20MB of total size.
 template <uint64_t MAX_TOTAL_SIZE, size_t MAX_FILES>
 struct SimplePurgePolicy {
   bool ShouldPurge(const QueueStatus<bricks::time::EPOCH_MILLISECONDS>& status) const {
     if (status.finalized.total_size + status.appended_file_size > MAX_TOTAL_SIZE) {
-      // Purge the oldest queued files if the total size of data stored in the queue exceeds 1GB.
+      // Purge the oldest files if the total size of data stored in the queue exceeds MAX_TOTAL_SIZE.
       return true;
     } else if (status.finalized.queue.size() > MAX_FILES) {
-      // Purge the oldest queued files if the total number of queued files exceeds 1000.
+      // Purge the oldest files if the total number of queued files exceeds MAX_FILE.
       return true;
     } else {
       // Good to go otherwise.
@@ -121,7 +121,7 @@ struct SimplePurgePolicy {
   }
 };
 
-struct KeepUnder1GBAndUnder1KFiles : SimplePurgePolicy<1024 * 1024 * 1024, 1000> {};
+struct KeepUnder20MBAndUnder1KFiles : SimplePurgePolicy<20 * 1024 * 1024, 1000> {};
 
 // Default retry strategy for the processing of finalized files.
 // On `Success`, processes files as they arrive without any delays.
@@ -146,7 +146,7 @@ class RetryExponentially {
                               const T_FILE_SYSTEM& file_system,
                               const Params& params)
       : time_manager_(time_manager),
-        last_update_time_(time_manager_.MockableNow()),
+        last_update_time_(time_manager_.Now()),
         time_to_be_ready_to_process_(last_update_time_),
         file_system_(file_system),
         params_(params) {
@@ -165,7 +165,7 @@ class RetryExponentially {
     // TODO(dkorolev): Support other means like CoreData, or stick with a file?
   }
   bool ReadyToProcess() const {
-    const typename T_TIME_MANAGER::T_TIMESTAMP now = time_manager_.MockableNow();
+    const typename T_TIME_MANAGER::T_TIMESTAMP now = time_manager_.Now();
     if (now < last_update_time_) {
       // Possible time skew, stay on the safe side.
       last_update_time_ = now;
@@ -177,12 +177,12 @@ class RetryExponentially {
   }
   // OnSuccess(): Clear all retry delays, cruising at full speed.
   void OnSuccess() {
-    last_update_time_ = time_manager_.MockableNow();
+    last_update_time_ = time_manager_.Now();
     time_to_be_ready_to_process_ = last_update_time_;
   }
   // OnFailure(): Set or update all retry delays.
   void OnFailure() {
-    const typename T_TIME_MANAGER::T_TIMESTAMP now = time_manager_.MockableNow();
+    const typename T_TIME_MANAGER::T_TIMESTAMP now = time_manager_.Now();
     if (now < last_update_time_) {
       // Possible time skew, stay on the safe side.
       time_to_be_ready_to_process_ = now;

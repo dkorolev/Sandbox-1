@@ -234,7 +234,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
     return matched_files_list;
   }
 
-  // ValidateCurrentFiles() expires the current file and/or creates the new one as necessary.
+  // EnsureCurrentFileIsOpen() expires the current file and/or creates the new one as necessary.
   void EnsureCurrentFileIsOpen(const uint64_t message_size_in_bytes, const T_TIMESTAMP now) {
     static_cast<void>(message_size_in_bytes);  // TODO(dkorolev): Call purge, use `message_size_in_bytes`.
     if (!current_file_) {
@@ -251,9 +251,10 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   // The one remaining current file can be appended to or finalized depending on the strategy.
   void WorkerThread() {
     // Step 1/4: Get the list of finalized files.
-    const std::vector<FileInfo<T_TIMESTAMP>>& finalized_files_on_disk =
-        ScanDir([this](const std::string& s,
-                       T_TIMESTAMP* t) { return T_FILE_NAMING_STRATEGY::finalized.ParseFileName(s, t); });
+    typedef std::vector<FileInfo<T_TIMESTAMP>> FileInfoVector;
+    const FileInfoVector& finalized_files_on_disk = ScanDir([this](const std::string& s, T_TIMESTAMP* t) {
+      return T_FILE_NAMING_STRATEGY::finalized.ParseFileName(s, t);
+    });
     status_.finalized.queue.assign(finalized_files_on_disk.begin(), finalized_files_on_disk.end());
     status_.finalized.total_size = 0;
     for (const auto& file : finalized_files_on_disk) {
@@ -261,7 +262,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
     }
 
     // Step 2/4: Get the list of current files.
-    const std::vector<FileInfo<T_TIMESTAMP>>& current_files_on_disk = ScanDir([this](
+    const FileInfoVector& current_files_on_disk = ScanDir([this](
         const std::string& s, T_TIMESTAMP* t) { return T_FILE_NAMING_STRATEGY::current.ParseFileName(s, t); });
     // TODO(dkorolev): Finalize all or all but one `current` files. Rename them and append them to the queue.
     static_cast<void>(current_files_on_disk);
@@ -279,7 +280,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       std::unique_ptr<FileInfo<T_TIMESTAMP>> next_file;
       {
         std::unique_lock<std::mutex> lock(status_mutex_);
-        auto predicate = [this]() {
+        const auto predicate = [this]() {
           if (force_worker_thread_shutdown_ && !T_CONFIG::ProcessQueueToTheEndOnShutdown()) {
             return true;
           } else if (force_processing_) {

@@ -26,7 +26,7 @@ struct Config {
   typedef bricks::FileSystem T_FILE_SYSTEM;
   typedef strategy::UseUNIXTimeInMilliseconds T_TIME_MANAGER;
   typedef strategy::KeepFilesAround100KBUnlessNoBacklog T_FINALIZE_POLICY;
-  typedef strategy::KeepUnder1GBAndUnder1KFiles T_PURGE_POLICY;
+  typedef strategy::KeepUnder20MBAndUnder1KFiles T_PURGE_POLICY;
   template <class TIME_MANAGER, class FILE_SYSTEM>
   using T_RETRY_POLICY = strategy::RetryExponentially<TIME_MANAGER, FILE_SYSTEM>;
 
