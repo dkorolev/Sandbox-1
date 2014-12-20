@@ -128,10 +128,10 @@ struct FileSystem {
 
   static void ScanDirUntil(const std::string& directory, std::function<bool(const std::string&)> lambda) {
     DIR* dir = ::opendir(directory.c_str());
-    auto closedir_guard = MakeScopeGuard([dir]() { ::closedir(dir); });
+    const auto closedir_guard = MakeScopeGuard([dir]() { ::closedir(dir); });
     if (dir) {
       while (struct dirent* entry = ::readdir(dir)) {
-        if (*entry->d_name && strcmp(entry->d_name, ".") && strcmp(entry->d_name, "..")) {
+        if (*entry->d_name && ::strcmp(entry->d_name, ".") && ::strcmp(entry->d_name, "..")) {
           if (!lambda(entry->d_name)) {
             return;
           }
