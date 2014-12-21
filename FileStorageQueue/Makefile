@@ -10,6 +10,7 @@ BIN=$(SRC:%.cc=build/%)
 
 test: all
 	./build/test
+	./build/test_retry_strategy
 
 all: build ${BIN}
 
