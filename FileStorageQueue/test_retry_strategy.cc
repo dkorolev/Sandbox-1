@@ -29,8 +29,8 @@ DEFINE_string(tmpdir, "build/", "Directory to create temporary files in.");
 DEFINE_int32(n, 200, "Number of FSQ-s to run. They will be run in parallel");
 DEFINE_int32(number_of_failures, 1, "The first --number_of_failures processing attempts will fail.");
 
-// Wait for 0.25s on average, with exponential distribution.
-DEFINE_double(mean_ms, 250, "Retry exponential distribution parameter: Average time, in ms.");
+// Wait for 0.2s on average, with exponential distribution.
+DEFINE_double(mean_ms, 200, "Retry exponential distribution parameter: Average time, in ms.");
 DEFINE_double(min_ms, 0, "Retry exponential distribution parameter: Minimum time, in ms.");
 DEFINE_double(max_ms, 5000, "Retry exponential distribution parameter: Maximum time, in ms.");
 

@@ -327,7 +327,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
             return false;
           }
         };
-        if (should_wait || !predicate()) {
+        if (!predicate()) {
           if (should_wait) {
             queue_status_condition_variable_.wait_for(
                 lock, std::chrono::milliseconds(static_cast<uint64_t>(wait_ms)), predicate);
@@ -352,8 +352,8 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       if (next_file) {
         const FileProcessingResult result = processor_.OnFileReady(*next_file.get(), time_manager_.Now());
         if (result == FileProcessingResult::Success || result == FileProcessingResult::SuccessAndMoved) {
-          processing_suspended_ = false;
           std::unique_lock<std::mutex> lock(status_mutex_);
+          processing_suspended_ = false;
           if (*next_file.get() == status_.finalized.queue.front()) {
             status_.finalized.queue.pop_front();
           } else {
@@ -365,6 +365,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
           }
           T_RETRY_STRATEGY_INSTANCE::OnSuccess();
         } else if (result == FileProcessingResult::Unavailable) {
+          std::unique_lock<std::mutex> lock(status_mutex_);
           processing_suspended_ = true;
         } else if (result == FileProcessingResult::FailureNeedRetry) {
           T_RETRY_STRATEGY_INSTANCE::OnFailure();
