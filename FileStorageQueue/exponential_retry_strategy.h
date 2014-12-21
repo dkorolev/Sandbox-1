@@ -27,8 +27,6 @@ struct StatefulRandSeed {
 // On `Success`, processes files as they arrive without any delays.
 // On `Unavaliable`, retries after an amount of time drawn from an exponential distribution
 // with the mean defaulting to 15 minutes, min defaulting to 1 minute and max defaulting to 24 hours.
-// ...
-// Handles time skews correctly.
 template <typename FILE_SYSTEM_FOR_RETRY_STRATEGY>
 class ExponentialDelayRetryStrategy {
  public:
