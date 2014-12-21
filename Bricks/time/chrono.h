@@ -5,6 +5,7 @@
 
 #include <chrono>
 
+#include "../port.h"
 #include "../strings/fixed_size_serializer.h"
 
 // TODO(dkorolev): Add platform-dependent tests comparing Bricks time to UNIX time.
@@ -29,7 +30,11 @@ struct EpochClockGuaranteeingMonotonicity {
     }
   };
   static const Impl& Singleton() {
-    static thread_local Impl singleton;
+    static
+#ifndef BRICKS_ANDROID
+    thread_local
+#endif
+    Impl singleton;
     return singleton;
   }
 };
