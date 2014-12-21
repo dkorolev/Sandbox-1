@@ -27,23 +27,44 @@ using bricks::time::EPOCH_MILLISECONDS;
 DEFINE_string(tmpdir, "build/", "Directory to create temporary files in.");
 DEFINE_bool(verbose, true, "Set to false to supress verbose output.");
 
-DEFINE_int32(n, 8, "Number of FSQ-s to run.");
+DEFINE_int32(n, 5, "Number of FSQ-s to run.");
+DEFINE_int32(number_of_failures, 3, "The first --number_of_failures processing attempts will fail.");
+DEFINE_bool(force_processing, false, "Set to true to have `ForceProcessing()` called for each worker.");
 DEFINE_double(p25_max, 5, "Maximum allowed value for 25-th percentile latency, in ms.");
 DEFINE_double(p75_min, 0, "Minimum allowed value for 25-th percentile latency, in ms.");
 
+inline void SafeDebugOutput(const std::string& message) {
+  if (FLAGS_verbose) {
+    static std::mutex mutex;
+    std::lock_guard<std::mutex> lock(mutex);
+    std::cerr << message << std::endl;
+  }
+}
+
 // LatencyMeasuringProcessor measures the time it took for the message to get processed.
 struct LatencyMeasuringProcessor final {
-  LatencyMeasuringProcessor(atomic_size_t& done_processors_counter)
-      : done_processors_counter_(done_processors_counter), processed_(false) {
+  LatencyMeasuringProcessor(size_t index, atomic_size_t& counter)
+      : index_(index), counter_(counter), failures_remaining_(FLAGS_number_of_failures), processed_(false) {
   }
   fsq::FileProcessingResult OnFileReady(const fsq::FileInfo<EPOCH_MILLISECONDS>&, EPOCH_MILLISECONDS now) {
-    assert(!processed_);
-    processed_ = true;
-    message_processed_timestamp_ = now;
-    ++done_processors_counter_;
-    return fsq::FileProcessingResult::Success;
+    SafeDebugOutput(
+        bricks::strings::Printf("INDEX=%03d : Failures remaining %3d.", index_, failures_remaining_));
+    if (failures_remaining_ > 0) {
+      --failures_remaining_;
+      ++counter_;  // Important to only increment `counter_` after `processed_` is set, hence it's inside.
+      return fsq::FileProcessingResult::FailureNeedRetry;
+    } else {
+      assert(failures_remaining_ == 0);
+      assert(!processed_);
+      processed_ = true;
+      message_processed_timestamp_ = now;
+      ++counter_;  // Important to only increment `counter_` after `processed_` is set, hence it's inside.
+      return fsq::FileProcessingResult::Success;
+    }
   }
-  atomic_size_t& done_processors_counter_;
+  size_t index_;
+  atomic_size_t& counter_;
+  int failures_remaining_;
   bool processed_ = false;
   EPOCH_MILLISECONDS message_push_timestamp_;
   EPOCH_MILLISECONDS message_processed_timestamp_;
@@ -78,17 +99,23 @@ TEST(FileSystemQueueLatenciesTest, NoLatency) {
   struct Worker final {
     Worker(int index, std::atomic_size_t& counter)
         : directory_name_(GenDirNameAndCreateDir(index)),
+          index_(index),
           counter_(counter),
-          processor_(counter_),
+          processor_(index, counter_),
           fsq_(processor_, directory_name_) {
     }
     ~Worker() {
       // TODO(dkorolev): Remove created file(s) and the directory.
     }
-    void Run() {
+    void InvokePushMessage() {
       processor_.message_push_timestamp_ = bricks::time::Now();
       fsq_.PushMessage("foo");
+    }
+    void InvokeForceProcessing() {
       fsq_.ForceProcessing();
+    }
+    void InvokeFinalizeCurrentFile() {
+      fsq_.FinalizeCurrentFile();
     }
     uint64_t LatencyInMS() const {
       assert(processor_.processed_);
@@ -102,6 +129,7 @@ TEST(FileSystemQueueLatenciesTest, NoLatency) {
       return directory_name;
     }
     std::string directory_name_;
+    size_t index_;
     std::atomic_size_t& counter_;
     LatencyMeasuringProcessor processor_;
     fsq::FSQ<TestConfig> fsq_;
@@ -114,9 +142,14 @@ TEST(FileSystemQueueLatenciesTest, NoLatency) {
   }
 
   for (auto& it : workers) {
-    it->Run();
+    it->InvokePushMessage();
   }
-  while (counter != N) {
+
+  for (auto& it : workers) {
+    it->InvokeFinalizeCurrentFile();
+  }
+
+  while (counter != N * (1 + FLAGS_number_of_failures)) {
     ;  // Spin lock;
   }
 

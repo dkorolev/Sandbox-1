@@ -189,6 +189,14 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
     queue_status_condition_variable_.notify_all();
   }
 
+  // `FinalizeCurrentFile()` forces the finalization of the currently appended file.
+  void FinalizeCurrentFile() {
+    if (current_file_) {
+      std::unique_lock<std::mutex> lock(status_mutex_);
+      FinalizeCurrentFile(lock);
+    }
+  }
+
   // Removes all finalized and current files from disk.
   // USE CAREFULLY!
   void RemoveAllFSQFiles() const {
@@ -224,13 +232,6 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       status_.appended_file_timestamp = T_TIMESTAMP(0);
       current_file_name_.clear();
       queue_status_condition_variable_.notify_all();
-    }
-  }
-
-  void FinalizeCurrentFile() {
-    if (current_file_) {
-      std::unique_lock<std::mutex> lock(status_mutex_);
-      FinalizeCurrentFile(lock);
     }
   }
 
