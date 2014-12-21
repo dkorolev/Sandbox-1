@@ -28,7 +28,7 @@ struct Config {
   // using T_RETRY_STRATEGY = strategy::AlwaysProcessNoNeedToRetry<FILESYSTEM>;
   using T_RETRY_STRATEGY = strategy::ExponentialDelayRetryStrategy<FILESYSTEM>;
   typedef bricks::FileSystem T_FILE_SYSTEM;
-  typedef strategy::UseUNIXTimeInMilliseconds T_TIME_MANAGER;
+  typedef strategy::UseEpochMilliseconds T_TIME_MANAGER;
   typedef strategy::KeepFilesAround100KBUnlessNoBacklog T_FINALIZE_STRATEGY;
   typedef strategy::KeepUnder20MBAndUnder1KFiles T_PURGE_STRATEGY;
 

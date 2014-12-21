@@ -92,7 +92,7 @@ struct DummyFileNamingToUnblockAlexFromMinsk {
 };
 
 // Default time manager strategy: Use UNIX time in milliseconds.
-struct UseUNIXTimeInMilliseconds final {
+struct UseEpochMilliseconds final {
   typedef bricks::time::EPOCH_MILLISECONDS T_TIMESTAMP;
   typedef bricks::time::MILLISECONDS_INTERVAL T_TIME_SPAN;
   T_TIMESTAMP Now() const {

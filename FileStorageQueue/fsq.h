@@ -84,15 +84,22 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   // The constructor initializes all the parameters and starts the worker thread.
   FSQ(T_PROCESSOR& processor,
       const std::string& working_directory,
-      const T_TIME_MANAGER& time_manager = T_TIME_MANAGER(),
-      const T_FILE_SYSTEM& file_system = T_FILE_SYSTEM())
-      : T_RETRY_STRATEGY_INSTANCE(file_system),
+      const T_TIME_MANAGER& time_manager,
+      const T_FILE_SYSTEM& file_system,
+      const T_RETRY_STRATEGY_INSTANCE& retry_strategy)
+      : T_RETRY_STRATEGY_INSTANCE(retry_strategy),
         processor_(processor),
         working_directory_(working_directory),
         time_manager_(time_manager),
         file_system_(file_system) {
     T_CONFIG::Initialize(*this);
     worker_thread_ = std::thread(&FSQ::WorkerThread, this);
+  }
+  FSQ(T_PROCESSOR& processor,
+      const std::string& working_directory,
+      const T_TIME_MANAGER& time_manager = T_TIME_MANAGER(),
+      const T_FILE_SYSTEM& file_system = T_FILE_SYSTEM())
+      : FSQ(processor, working_directory, time_manager, file_system, T_RETRY_STRATEGY_INSTANCE(file_system)) {
   }
 
   // Destructor gracefully terminates worker thread and optionally joins it.
@@ -302,30 +309,31 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       std::unique_ptr<FileInfo<T_TIMESTAMP>> next_file;
       {
         std::unique_lock<std::mutex> lock(status_mutex_);
-        const auto predicate = [this]() {
+        const bricks::time::EPOCH_MILLISECONDS begin_ms = bricks::time::Now();
+        bricks::time::MILLISECONDS_INTERVAL wait_ms;
+        const bool should_wait = T_RETRY_STRATEGY_INSTANCE::ShouldWait(&wait_ms);
+        const auto predicate = [this, should_wait, begin_ms, wait_ms]() {
           if (force_worker_thread_shutdown_) {
+            return true;
+          } else if (force_processing_) {
             return true;
           } else if (processing_suspended_) {
             return false;
-          } else if (force_processing_) {
-            return true;
+          } else if (should_wait && bricks::time::Now() - begin_ms < wait_ms) {
+            return false;
           } else if (!status_.finalized.queue.empty()) {
             return true;
           } else {
             return false;
           }
         };
-        // TODO(dkorolev): Retry delay should be handled here.
-        if (!predicate()) {
-          /*
-          bricks::time::MILLISECONDS_INTERVAL wait_ms;
-          if (T_RETRY_STRATEGY::ShouldWait(&wait_ms)) {
-            queue_status_condition_variable_.wait_for(lock, predicate,
-          std::chrono::milliseconds(static_cast<uint64_t>(wait_ms)));
+        if (should_wait || !predicate()) {
+          if (should_wait) {
+            queue_status_condition_variable_.wait_for(
+                lock, std::chrono::milliseconds(static_cast<uint64_t>(wait_ms)), predicate);
           } else {
-            */
-          queue_status_condition_variable_.wait(lock, predicate);
-          // }
+            queue_status_condition_variable_.wait(lock, predicate);
+          }
         }
         if (!status_.finalized.queue.empty()) {
           next_file.reset(new FileInfo<T_TIMESTAMP>(status_.finalized.queue.front()));
@@ -344,6 +352,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       if (next_file) {
         const FileProcessingResult result = processor_.OnFileReady(*next_file.get(), time_manager_.Now());
         if (result == FileProcessingResult::Success || result == FileProcessingResult::SuccessAndMoved) {
+          processing_suspended_ = false;
           std::unique_lock<std::mutex> lock(status_mutex_);
           if (*next_file.get() == status_.finalized.queue.front()) {
             status_.finalized.queue.pop_front();

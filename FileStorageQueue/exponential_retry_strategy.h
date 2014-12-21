@@ -1,7 +1,11 @@
 #ifndef FSQ_EXPONENTIAL_RETRY_STRATEGY_H
 #define FSQ_EXPONENTIAL_RETRY_STRATEGY_H
 
+#include <iostream>
+
 #include <string>
+#include <atomic>
+#include <random>
 
 // #include "../Bricks/util/util.h"
 // #include "../Bricks/file/file.h"
@@ -9,6 +13,15 @@
 
 namespace fsq {
 namespace strategy {
+
+// To be used primarily by the unit test to have different rand seeds.
+// TODO(dkorolev): Move to Bricks.
+struct StatefulRandSeed {
+  static int GetRandSeed() {
+    static std::atomic_int seed(static_cast<int>(bricks::time::Now()));
+    return ++seed;
+  }
+};
 
 // Exponential retry strategy for the processing of finalized files.
 // On `Success`, processes files as they arrive without any delays.
@@ -32,9 +45,9 @@ class ExponentialDelayRetryStrategy {
       : file_system_(file_system),
         last_update_time_(bricks::time::Now()),
         time_to_be_ready_to_process_(last_update_time_),
-        params_(params) {
-    // TODO(dkorolev): Code it.
-    // SetUpDistribution();
+        params_(params),
+        rng_(StatefulRandSeed::GetRandSeed()),
+        distribution_(1.0 / params.mean) {
   }
   explicit ExponentialDelayRetryStrategy(const T_FILE_SYSTEM& file_system,
                                          const double mean = 15 * 60 * 1e3,
@@ -42,23 +55,11 @@ class ExponentialDelayRetryStrategy {
                                          const double max = 24 * 60 * 60 * 1e3)
       : ExponentialDelayRetryStrategy(file_system, DistributionParams(mean, min, max)) {
   }
-  void AttachToFile(const std::string /*filename*/) {
-    // Serializes and deserializes itself into a file, used to preserve retry delays between restarts.
-    // TODO(dkorolev): Support other means like CoreData, or stick with a file?
+#if 0
+  void AttachToFile(const std::string filename) {
+    // TODO(dkorolev): File persistence.
   }
-  /*
-  bool ReadyToProcess() const {
-    const bricks::time::EPOCH_MILLISECONDS now = bricks::time::Now();
-    if (now < last_update_time_) {
-      // Possible time skew, stay on the safe side.
-      last_update_time_ = now;
-      time_to_be_ready_to_process_ = now;
-      return true;
-    } else {
-      return now >= time_to_be_ready_to_process_;
-    }
-  }
-  */
+#endif
   // OnSuccess(): Clear all retry delays, cruising at full speed.
   void OnSuccess() {
     last_update_time_ = bricks::time::Now();
@@ -67,18 +68,22 @@ class ExponentialDelayRetryStrategy {
   // OnFailure(): Set or update all retry delays.
   void OnFailure() {
     const bricks::time::EPOCH_MILLISECONDS now = bricks::time::Now();
-    if (now < last_update_time_) {
-      // Possible time skew, stay on the safe side.
-      time_to_be_ready_to_process_ = now;
-    }
+    double random_delay;
+    do {
+      random_delay = distribution_(rng_);
+    } while (!(random_delay >= params_.min && random_delay <= params_.max));
+    time_to_be_ready_to_process_ = std::max(
+        time_to_be_ready_to_process_, now + static_cast<bricks::time::MILLISECONDS_INTERVAL>(random_delay));
     last_update_time_ = now;
-    // TODO(dkorolev): Code it.
-    ///    time_to_be_ready_to_process_ =
-    ///        std::max(time_to_be_ready_to_process_, now + bricks::time::MILLISECONDS_INTERVAL(1000));  // now
-    ///        + DrawFromExponentialDistribution();
   }
-  bool ShouldWait(bricks::time::MILLISECONDS_INTERVAL* /*output_wait_ms*/) {
-    return false;
+  bool ShouldWait(bricks::time::MILLISECONDS_INTERVAL* output_wait_ms) {
+    const bricks::time::EPOCH_MILLISECONDS now = bricks::time::Now();
+    if (now >= time_to_be_ready_to_process_) {
+      return false;
+    } else {
+      *output_wait_ms = time_to_be_ready_to_process_ - now;
+      return true;
+    }
   }
 
  private:
@@ -86,6 +91,8 @@ class ExponentialDelayRetryStrategy {
   mutable typename bricks::time::EPOCH_MILLISECONDS last_update_time_;
   mutable typename bricks::time::EPOCH_MILLISECONDS time_to_be_ready_to_process_;
   const DistributionParams params_;
+  std::mt19937 rng_;
+  std::exponential_distribution<double> distribution_;
 };
 
 }  // namespace strategy

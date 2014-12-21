@@ -63,6 +63,25 @@ inline bricks::time::MILLISECONDS_INTERVAL operator-(bricks::time::EPOCH_MILLISE
                                                           static_cast<int64_t>(rhs));
 }
 
+inline bricks::time::MILLISECONDS_INTERVAL operator-(bricks::time::EPOCH_MILLISECONDS x) {
+  return static_cast<bricks::time::MILLISECONDS_INTERVAL>(-static_cast<int64_t>(x));
+}
+
+inline bricks::time::EPOCH_MILLISECONDS operator+(bricks::time::EPOCH_MILLISECONDS lhs,
+                                                  bricks::time::MILLISECONDS_INTERVAL rhs) {
+  return static_cast<bricks::time::EPOCH_MILLISECONDS>(static_cast<int64_t>(lhs) + static_cast<int64_t>(rhs));
+}
+
+inline bricks::time::EPOCH_MILLISECONDS operator-(bricks::time::EPOCH_MILLISECONDS lhs,
+                                                  bricks::time::MILLISECONDS_INTERVAL rhs) {
+  return static_cast<bricks::time::EPOCH_MILLISECONDS>(static_cast<int64_t>(lhs) - static_cast<int64_t>(rhs));
+}
+
+inline bricks::time::EPOCH_MILLISECONDS operator+(bricks::time::MILLISECONDS_INTERVAL lhs,
+                                                  bricks::time::EPOCH_MILLISECONDS rhs) {
+  return static_cast<bricks::time::EPOCH_MILLISECONDS>(static_cast<int64_t>(lhs) + static_cast<int64_t>(rhs));
+}
+
 // TODO(dkorolev): Add more arithmetic operations on milliseconds here.
 
 #endif
