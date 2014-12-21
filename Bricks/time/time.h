@@ -24,7 +24,7 @@ struct EpochClockGuaranteeingMonotonicity {
     }
   };
   static const Impl& Singleton() {
-    static Impl singleton;
+    static thread_local Impl singleton;
     return singleton;
   }
 };
