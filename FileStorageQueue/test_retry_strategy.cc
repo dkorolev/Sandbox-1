@@ -9,6 +9,7 @@
 #include <atomic>
 
 #include "fsq.h"
+#include "exponential_retry_strategy.h"
 
 #include "../Bricks/dflags/dflags.h"
 
@@ -138,6 +139,6 @@ TEST(FileSystemQueueLatenciesTest, NoLatency) {
     std::cerr << "Latency 75-th percentile: " << latency_p75_ms << " ms\n";
   }
 
-  EXPECT_LT(latency_p25_ms, FLAGS_p25_max);
-  EXPECT_GT(latency_p75_ms, FLAGS_p75_min);
+  EXPECT_LE(latency_p25_ms, FLAGS_p25_max);
+  EXPECT_GE(latency_p75_ms, FLAGS_p75_min);
 }

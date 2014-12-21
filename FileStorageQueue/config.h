@@ -6,6 +6,7 @@
 #include "../Bricks/time/time.h"
 
 #include "strategies.h"
+#include "exponential_retry_strategy.h"
 
 namespace fsq {
 
@@ -23,7 +24,9 @@ struct Config {
   typedef std::string T_MESSAGE;
   typedef strategy::JustAppendToFile T_FILE_APPEND_STRATEGY;
   typedef strategy::DummyFileNamingToUnblockAlexFromMinsk T_FILE_NAMING_STRATEGY;
-  typedef strategy::AlwaysProcessNoNeedToRetry T_RETRY_STRATEGY;
+  template <typename FILESYSTEM>
+  // using T_RETRY_STRATEGY = strategy::AlwaysProcessNoNeedToRetry<FILESYSTEM>;
+  using T_RETRY_STRATEGY = strategy::ExponentialDelayRetryStrategy<FILESYSTEM>;
   typedef bricks::FileSystem T_FILE_SYSTEM;
   typedef strategy::UseUNIXTimeInMilliseconds T_TIME_MANAGER;
   typedef strategy::KeepFilesAround100KBUnlessNoBacklog T_FINALIZE_STRATEGY;

@@ -40,16 +40,18 @@ class AppendToFileWithSeparator {
   std::string separator_ = "";
 };
 
-// Non-existent retry strategy: Always process, no need to retry.
+// A dummy retry strategy: Always process, no need to retry.
+template <class FILE_SYSTEM>
 class AlwaysProcessNoNeedToRetry {
  public:
- /*
-  void OnSuccess() {
+  AlwaysProcessNoNeedToRetry(const FILE_SYSTEM&) {
   }
-  void OnFailure() {
+  typedef FILE_SYSTEM T_FILE_SYSTEM;
+  inline void OnSuccess() {
   }
-  */
-  bool ShouldWait(bricks::time::MILLISECONDS_INTERVAL*) {
+  inline void OnFailure() {
+  }
+  inline bool ShouldWait(bricks::time::MILLISECONDS_INTERVAL*) {
     return false;
   }
 };
@@ -130,11 +132,11 @@ struct SimpleFinalizationStrategy {
 
 struct KeepFilesAround100KBUnlessNoBacklog
     : SimpleFinalizationStrategy<bricks::time::EPOCH_MILLISECONDS,
-                               bricks::time::MILLISECONDS_INTERVAL,
-                               100 * 1024,
-                               bricks::time::MILLISECONDS_INTERVAL(24 * 60 * 60 * 1000),
-                               10 * 1024,
-                               bricks::time::MILLISECONDS_INTERVAL(10 * 60 * 1000)> {};
+                                 bricks::time::MILLISECONDS_INTERVAL,
+                                 100 * 1024,
+                                 bricks::time::MILLISECONDS_INTERVAL(24 * 60 * 60 * 1000),
+                                 10 * 1024,
+                                 bricks::time::MILLISECONDS_INTERVAL(10 * 60 * 1000)> {};
 
 // Default file purge strategy: Keeps under 1K files of under 20MB of total size.
 template <uint64_t MAX_TOTAL_SIZE, size_t MAX_FILES>
