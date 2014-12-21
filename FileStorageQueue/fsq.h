@@ -329,8 +329,9 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
         };
         if (!predicate()) {
           if (should_wait) {
+            // Add one millisecond to avoid multiple runs of this loop when `wait_ms` is close to zero.
             queue_status_condition_variable_.wait_for(
-                lock, std::chrono::milliseconds(static_cast<uint64_t>(wait_ms)), predicate);
+                lock, std::chrono::milliseconds(static_cast<uint64_t>(wait_ms) + 1), predicate);
           } else {
             queue_status_condition_variable_.wait(lock, predicate);
           }
