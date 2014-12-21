@@ -21,14 +21,13 @@ template <typename PROCESSOR>
 struct Config {
   typedef PROCESSOR T_PROCESSOR;
   typedef std::string T_MESSAGE;
-  typedef strategy::JustAppendToFile T_FILE_APPEND_POLICY;
+  typedef strategy::JustAppendToFile T_FILE_APPEND_STRATEGY;
   typedef strategy::DummyFileNamingToUnblockAlexFromMinsk T_FILE_NAMING_STRATEGY;
+  typedef strategy::AlwaysProcessNoNeedToRetry T_RETRY_STRATEGY;
   typedef bricks::FileSystem T_FILE_SYSTEM;
   typedef strategy::UseUNIXTimeInMilliseconds T_TIME_MANAGER;
-  typedef strategy::KeepFilesAround100KBUnlessNoBacklog T_FINALIZE_POLICY;
-  typedef strategy::KeepUnder20MBAndUnder1KFiles T_PURGE_POLICY;
-  template <class TIME_MANAGER, class FILE_SYSTEM>
-  using T_RETRY_POLICY = strategy::RetryExponentially<TIME_MANAGER, FILE_SYSTEM>;
+  typedef strategy::KeepFilesAround100KBUnlessNoBacklog T_FINALIZE_STRATEGY;
+  typedef strategy::KeepUnder20MBAndUnder1KFiles T_PURGE_STRATEGY;
 
   // Set to true to have FSQ detach the processing thread instead of joining it in destructor.
   static bool DetachProcessingThreadOnTermination() {

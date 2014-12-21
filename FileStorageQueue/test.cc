@@ -43,16 +43,16 @@ struct MockConfig : fsq::Config<TestOutputFilesProcessor> {
   // Mock time.
   typedef MockTime T_TIME_MANAGER;
   // Append using newlines.
-  typedef fsq::strategy::AppendToFileWithSeparator T_FILE_APPEND_POLICY;
+  typedef fsq::strategy::AppendToFileWithSeparator T_FILE_APPEND_STRATEGY;
   // No backlog: 20 bytes 10 seconds old files max, with backlog: 100 bytes 60 seconds old files max.
-  typedef fsq::strategy::SimpleFinalizationPolicy<MockTime::T_TIMESTAMP,
-                                                  MockTime::T_TIME_SPAN,
-                                                  20,
-                                                  MockTime::T_TIME_SPAN(10 * 1000),
-                                                  100,
-                                                  MockTime::T_TIME_SPAN(60 * 1000)> T_FINALIZE_POLICY;
+  typedef fsq::strategy::SimpleFinalizationStrategy<MockTime::T_TIMESTAMP,
+                                                    MockTime::T_TIME_SPAN,
+                                                    20,
+                                                    MockTime::T_TIME_SPAN(10 * 1000),
+                                                    100,
+                                                    MockTime::T_TIME_SPAN(60 * 1000)> T_FINALIZE_STRATEGY;
   // Purge after 1000 bytes total or after 3 files.
-  typedef fsq::strategy::SimplePurgePolicy<1000, 3> T_PURGE_POLICY;
+  typedef fsq::strategy::SimplePurgeStrategy<1000, 3> T_PURGE_STRATEGY;
 
   // Non-static initialization.
   template <typename T_FSQ_INSTANCE>
@@ -86,7 +86,7 @@ TEST(FileSystemQueueTest, FinalizedBySize) {
   EXPECT_EQ(15ull, fsq.GetQueueStatus().appended_file_size);  // 15 == strlen("this is\na test\n").
   EXPECT_EQ(0u, fsq.GetQueueStatus().finalized.queue.size());
   EXPECT_EQ(0ul, fsq.GetQueueStatus().finalized.total_size);
-  EXPECT_EQ(0, processor.finalized_count);
+  EXPECT_EQ(0u, processor.finalized_count);
 
   // Add another message that would make current file exceed 20 bytes.
   fsq.PushMessage("now go ahead and process this stuff");
@@ -94,7 +94,7 @@ TEST(FileSystemQueueTest, FinalizedBySize) {
     ;  // Spin lock.
   }
 
-  EXPECT_EQ(1, processor.finalized_count);
+  EXPECT_EQ(1u, processor.finalized_count);
   EXPECT_EQ("finalized-00000000000000000101.bin", processor.filename);
   EXPECT_EQ("this is\na test\nnow go ahead and process this stuff\n", processor.contents);
   EXPECT_EQ(103ull, processor.timestamp);
@@ -121,7 +121,7 @@ TEST(FileSystemQueueTest, FinalizedByAge) {
   EXPECT_EQ(15ull, fsq.GetQueueStatus().appended_file_size);  // 15 == strlen("this is\na test\n").
   EXPECT_EQ(0u, fsq.GetQueueStatus().finalized.queue.size());
   EXPECT_EQ(0ul, fsq.GetQueueStatus().finalized.total_size);
-  EXPECT_EQ(0, processor.finalized_count);
+  EXPECT_EQ(0u, processor.finalized_count);
 
   // Add another message and make the current file span an interval of more than 10 seconds.
   mock_wall_time.now = 21000;
@@ -131,7 +131,7 @@ TEST(FileSystemQueueTest, FinalizedByAge) {
     ;  // Spin lock.
   }
 
-  EXPECT_EQ(1, processor.finalized_count);
+  EXPECT_EQ(1u, processor.finalized_count);
   EXPECT_EQ("finalized-00000000000000010000.bin", processor.filename);
   EXPECT_EQ("this too\nshall\npass\n", processor.contents);
   EXPECT_EQ(21000ull, processor.timestamp);
@@ -167,7 +167,7 @@ TEST(FileSystemQueueTest, ForceProcessing) {
     ;  // Spin lock.
   }
 
-  EXPECT_EQ(1, processor.finalized_count);
+  EXPECT_EQ(1u, processor.finalized_count);
   EXPECT_EQ("finalized-00000000000000001001.bin", processor.filename);
   EXPECT_EQ("foo\nbar\nbaz\n", processor.contents);
   EXPECT_EQ(1003ull, processor.timestamp);

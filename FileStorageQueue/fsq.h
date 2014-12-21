@@ -56,22 +56,20 @@ enum class FileProcessingResult { Success, SuccessAndMoved, Unavailable, Failure
 
 template <class CONFIG>
 class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
-                  public CONFIG::T_FINALIZE_POLICY,
-                  public CONFIG::T_PURGE_POLICY,
-                  public CONFIG::T_FILE_APPEND_POLICY {
+                  public CONFIG::T_FINALIZE_STRATEGY,
+                  public CONFIG::T_PURGE_STRATEGY,
+                  public CONFIG::T_FILE_APPEND_STRATEGY {
  public:
   typedef CONFIG T_CONFIG;
 
   typedef typename T_CONFIG::T_PROCESSOR T_PROCESSOR;
   typedef typename T_CONFIG::T_MESSAGE T_MESSAGE;
-  typedef typename T_CONFIG::T_FILE_APPEND_POLICY T_FILE_APPEND_POLICY;
+  typedef typename T_CONFIG::T_FILE_APPEND_STRATEGY T_FILE_APPEND_STRATEGY;
   typedef typename T_CONFIG::T_FILE_NAMING_STRATEGY T_FILE_NAMING_STRATEGY;
+  typedef typename T_CONFIG::T_RETRY_STRATEGY T_RETRY_STRATEGY;
   typedef typename T_CONFIG::T_FILE_SYSTEM T_FILE_SYSTEM;
   typedef typename T_CONFIG::T_TIME_MANAGER T_TIME_MANAGER;
-  typedef typename T_CONFIG::T_FINALIZE_POLICY T_FINALIZE_POLICY;
-  typedef typename T_CONFIG::T_PURGE_POLICY T_PURGE_POLICY;
-  template <class TIME_MANAGER, class FILE_SYSTEM>
-  using T_RETRY_POLICY = typename T_CONFIG::template T_RETRY_POLICY<TIME_MANAGER, FILE_SYSTEM>;
+  typedef typename T_CONFIG::T_FINALIZE_STRATEGY T_FINALIZE_STRATEGY;
 
   typedef typename T_TIME_MANAGER::T_TIMESTAMP T_TIMESTAMP;
   typedef typename T_TIME_MANAGER::T_TIME_SPAN T_TIME_SPAN;
@@ -138,25 +136,40 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       }
     } else {
       const T_TIMESTAMP now = time_manager_.Now();
-      const uint64_t message_size_in_bytes = T_FILE_APPEND_POLICY::MessageSizeInBytes(message);
+      const uint64_t message_size_in_bytes = T_FILE_APPEND_STRATEGY::MessageSizeInBytes(message);
       EnsureCurrentFileIsOpen(message_size_in_bytes, now);
       if (!current_file_ || current_file_->bad()) {
         throw FSQException();
       }
-      T_FILE_APPEND_POLICY::AppendToFile(*current_file_.get(), message);
+      T_FILE_APPEND_STRATEGY::AppendToFile(*current_file_.get(), message);
       status_.appended_file_size += message_size_in_bytes;
-      if (T_FINALIZE_POLICY::ShouldFinalize(status_, now)) {
+      if (T_FINALIZE_STRATEGY::ShouldFinalize(status_, now)) {
         FinalizeCurrentFile();
       }
     }
   }
 
+  // `ResumeProcessing() is used when a temporary reason of unavailability is now gone.
+  // A common usecase is if the processor sends files over network, and the network just became unavailable.
+  // In this case, on an event of network becoming available again, `ResumeProcessing()` should be called.
+  //
+  // `ResumeProcessing()` respects retransmission delays strategy. While the "Unavailability" event
+  // does not trigger retransmission logic, if, due to prior external factors, FSQ is in waiting mode for a while,
+  // `ResumeProcessing()` would not override that wait. Use `ForceProcessing()` for those forced overrides.
+  void ResumeProcessing() {
+    queue_status_condition_variable_.notify_all();
+  }
+
   // `ForceProcessing()` initiates processing of finalized files, if any.
-  // It is most commonly used to resume processing due to an externla event
-  // when it was suspended due to an `Unavailable` response from user processing code.
-  // Real life scenario: User code returns `Unavailable` due to the device going offline,
-  // all processing stops w/o retry policy being applied, `ForceProcessing()` is called
-  // to resume processing on an external event of the device being back online.
+  //
+  // THIS METHOD IS NOT SAFE, since using it based on a frequent external event, like "WiFi connected",
+  // may result in file queue processing to be started and re-started multiple times,
+  // skipping the retransmission delay logic.
+  //
+  // Only use `ForceProcessing()` when processing should start no matter what.
+  // Example: App just got updated, or a large external download has just been successfully completed.
+  //
+  // Use `ResumeProcessing()` in other cases.
   void ForceProcessing(bool force_finalize_current_file = false) {
     std::unique_lock<std::mutex> lock(status_mutex_);
     if (force_finalize_current_file || status_.finalized.queue.empty()) {
@@ -274,14 +287,14 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       queue_status_condition_variable_.notify_all();
     }
 
-    // Step 4/4: Start processing finalized files via T_PROCESSOR, respecting retry policy.
+    // Step 4/4: Start processing finalized files via T_PROCESSOR, respecting retry strategy.
     while (true) {
       // Wait for a newly arrived file or another event to happen.
       std::unique_ptr<FileInfo<T_TIMESTAMP>> next_file;
       {
         std::unique_lock<std::mutex> lock(status_mutex_);
         const auto predicate = [this]() {
-          if (force_worker_thread_shutdown_ && !T_CONFIG::ProcessQueueToTheEndOnShutdown()) {
+          if (force_worker_thread_shutdown_) {
             return true;
           } else if (force_processing_) {
             return true;
@@ -293,7 +306,14 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
         };
         // TODO(dkorolev): Retry delay should be handled here.
         if (!predicate()) {
-          queue_status_condition_variable_.wait(lock, predicate);
+          /*
+          bricks::time::MILLISECONDS_INTERVAL wait_ms;
+          if (T_RETRY_STRATEGY::ShouldWait(&wait_ms)) {
+            queue_status_condition_variable_.wait_for(lock, predicate, std::chrono::milliseconds(static_cast<uint64_t>(wait_ms)));
+          } else {
+            */
+            queue_status_condition_variable_.wait(lock, predicate);
+         // }
         }
         if (!status_.finalized.queue.empty()) {
           next_file.reset(new FileInfo<T_TIMESTAMP>(status_.finalized.queue.front()));
