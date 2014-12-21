@@ -39,11 +39,11 @@ TEST(FixedSizeSerializer, UInt64) {
 TEST(FixedSizeSerializer, ImplicitSyntax) {
   {
     uint32_t x;
-    EXPECT_EQ(42, UnpackFromString("42", x));
+    EXPECT_EQ(42u, UnpackFromString("42", x));
   }
   {
     uint16_t x;
-    EXPECT_EQ(10000, UnpackFromString("10000", x));
+    EXPECT_EQ(10000u, UnpackFromString("10000", x));
   }
   {
     uint16_t x = 42;

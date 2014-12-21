@@ -31,7 +31,7 @@
 #include "strategies.h"
 
 #include "../Bricks/file/file.h"
-#include "../Bricks/time/time.h"
+#include "../Bricks/time/chrono.h"
 
 namespace fsq {
 

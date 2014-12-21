@@ -1,7 +1,12 @@
-#ifndef BRICKS_TIME_TIME_H
-#define BRICKS_TIME_TIME_H
+// This file can not be named `time.h`, since it would interfere with C/C++ standard header.
+
+#ifndef BRICKS_TIME_CHRONO_H
+#define BRICKS_TIME_CHRONO_H
+
+#include <chrono>
 
 #include "../strings/fixed_size_serializer.h"
+
 // TODO(dkorolev): Add platform-dependent tests comparing Bricks time to UNIX time.
 
 namespace bricks {

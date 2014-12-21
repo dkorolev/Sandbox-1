@@ -3,7 +3,7 @@
 
 #include <string>
 
-#include "../Bricks/time/time.h"
+#include "../Bricks/time/chrono.h"
 
 #include "strategies.h"
 #include "exponential_retry_strategy.h"
@@ -25,7 +25,6 @@ struct Config {
   typedef strategy::JustAppendToFile T_FILE_APPEND_STRATEGY;
   typedef strategy::DummyFileNamingToUnblockAlexFromMinsk T_FILE_NAMING_STRATEGY;
   template <typename FILESYSTEM>
-  // using T_RETRY_STRATEGY = strategy::AlwaysProcessNoNeedToRetry<FILESYSTEM>;
   using T_RETRY_STRATEGY = strategy::ExponentialDelayRetryStrategy<FILESYSTEM>;
   typedef bricks::FileSystem T_FILE_SYSTEM;
   typedef strategy::UseEpochMilliseconds T_TIME_MANAGER;
