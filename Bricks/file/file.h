@@ -156,6 +156,11 @@ struct FileSystem {
       return static_cast<uint64_t>(info.st_size);
     }
   }
+
+  static void CreateDirectory(const std::string& directory) {
+    // Hard-code default permissions to avoid cross-platform compatibility issues.
+    ::mkdir(directory.c_str(), 0755);
+  }
 };
 
 }  // namespace bricks

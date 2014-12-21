@@ -11,9 +11,26 @@ namespace time {
 enum class EPOCH_MILLISECONDS : uint64_t {};
 enum class MILLISECONDS_INTERVAL : uint64_t {};
 
+// Since chrono::system_clock is not monotonic, and chrono::steady_clock is not guaranteed to be Epoch,
+// use a simple wrapper around chrono::system_clock to make it non-decreasing.
+struct EpochClockGuaranteeingMonotonicity {
+  struct Impl {
+    mutable uint64_t monotonic_now = 0ull;
+    inline uint64_t Now() const {
+      const uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               std::chrono::system_clock::now().time_since_epoch()).count();
+      monotonic_now = std::max(monotonic_now, now);
+      return monotonic_now;
+    }
+  };
+  static const Impl& Singleton() {
+    static Impl singleton;
+    return singleton;
+  }
+};
+
 inline EPOCH_MILLISECONDS Now() {
-  return static_cast<EPOCH_MILLISECONDS>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                             std::chrono::system_clock::now().time_since_epoch()).count());
+  return static_cast<EPOCH_MILLISECONDS>(EpochClockGuaranteeingMonotonicity::Singleton().Now());
 }
 
 }  // namespace time
@@ -44,6 +61,25 @@ inline bricks::time::MILLISECONDS_INTERVAL operator-(bricks::time::EPOCH_MILLISE
                                                      bricks::time::EPOCH_MILLISECONDS rhs) {
   return static_cast<bricks::time::MILLISECONDS_INTERVAL>(static_cast<int64_t>(lhs) -
                                                           static_cast<int64_t>(rhs));
+}
+
+inline bricks::time::MILLISECONDS_INTERVAL operator-(bricks::time::EPOCH_MILLISECONDS x) {
+  return static_cast<bricks::time::MILLISECONDS_INTERVAL>(-static_cast<int64_t>(x));
+}
+
+inline bricks::time::EPOCH_MILLISECONDS operator+(bricks::time::EPOCH_MILLISECONDS lhs,
+                                                  bricks::time::MILLISECONDS_INTERVAL rhs) {
+  return static_cast<bricks::time::EPOCH_MILLISECONDS>(static_cast<int64_t>(lhs) + static_cast<int64_t>(rhs));
+}
+
+inline bricks::time::EPOCH_MILLISECONDS operator-(bricks::time::EPOCH_MILLISECONDS lhs,
+                                                  bricks::time::MILLISECONDS_INTERVAL rhs) {
+  return static_cast<bricks::time::EPOCH_MILLISECONDS>(static_cast<int64_t>(lhs) - static_cast<int64_t>(rhs));
+}
+
+inline bricks::time::EPOCH_MILLISECONDS operator+(bricks::time::MILLISECONDS_INTERVAL lhs,
+                                                  bricks::time::EPOCH_MILLISECONDS rhs) {
+  return static_cast<bricks::time::EPOCH_MILLISECONDS>(static_cast<int64_t>(lhs) + static_cast<int64_t>(rhs));
 }
 
 // TODO(dkorolev): Add more arithmetic operations on milliseconds here.

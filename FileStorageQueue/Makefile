@@ -10,6 +10,8 @@ BIN=$(SRC:%.cc=build/%)
 
 test: all
 	./build/test
+	# TODO(dkorolev): More test cases. Delay parameters are passed via command line flags.
+	./build/test_retry_strategy
 
 all: build ${BIN}
 

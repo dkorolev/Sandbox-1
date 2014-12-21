@@ -9,20 +9,8 @@
 //
 // Once a file is ready, which translates to "on startup" if there are pending files,
 // the user handler in PROCESSOR::OnFileReady(file_name) is invoked.
-// Further logic depends on its return value:
-//
-// On `Success`, FQS deleted file that just got processed and sends the next one to as it arrives,
-// which can be instantaneously, is the queue is not empty, or once the next file is ready, if it is.
-//
-// On `SuccessAndMoved`, FQS does the same thing as for `Success`, except for it does not attempt
-// to delete the file, assuming that it has already been deleted or moved away by the user code.
-//
-// On `Unavailable`, automatic file processing is suspended until it is resumed externally.
-// An example of this case would be the processor being the file uploader, with the device going offline.
-// This way, no further action is required until FQS is explicitly notified that the device is back online.
-//
-// On `FailureNeedRetry`, the file is kept and will be re-attempted to be sent to the processor,
-// with respect to the retry strategy specified as the template parameter to FSQ.
+// When a retry strategy is active, further logic depends on the return value of this method,
+// see the description of the `FileProcessingResult` enum below for more details.
 //
 // On top of the above FSQ keeps an eye on the size it occupies on disk and purges the oldest data files
 // if the specified purge strategy dictates so.
@@ -51,27 +39,41 @@ struct FSQException : std::exception {
   // TODO(dkorolev): Fill this class.
 };
 
-// TODO(dkorolev): Add explanations.
+// On `Success`, FQS deleted file that just got processed and sends the next one to as it arrives,
+// which can happen immediately, if the queue is not empty, or later, once the next file is ready.
+//
+// On `SuccessAndMoved`, FQS does the same thing as for `Success`, except for it does not attempt
+// to delete the file, assuming that it has already been deleted or otherwise taken care of by the user code.
+// Keep in mind that the user code is responsible for making sure the file is removed or renamed,
+// otherwise it will be re-processed after the application restarts, because of matching the mask.
+//
+// On `Unavailable`, automatic file processing is suspended until it is resumed externally.
+// An example of this case would be the processor being the file uploader, with the device going offline.
+// This way, no further action is required until FQS is explicitly notified that the device is back online.
+//
+// On `FailureNeedRetry`, the file is kept and will be re-attempted to be sent to the processor,
+// with respect to the retry strategy specified as the template parameter to FSQ.
 enum class FileProcessingResult { Success, SuccessAndMoved, Unavailable, FailureNeedRetry };
 
 template <class CONFIG>
 class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
-                  public CONFIG::T_FINALIZE_POLICY,
-                  public CONFIG::T_PURGE_POLICY,
-                  public CONFIG::T_FILE_APPEND_POLICY {
+                  public CONFIG::T_FINALIZE_STRATEGY,
+                  public CONFIG::T_PURGE_STRATEGY,
+                  public CONFIG::T_FILE_APPEND_STRATEGY,
+                  public CONFIG::template T_RETRY_STRATEGY<typename CONFIG::T_FILE_SYSTEM> {
  public:
   typedef CONFIG T_CONFIG;
 
   typedef typename T_CONFIG::T_PROCESSOR T_PROCESSOR;
   typedef typename T_CONFIG::T_MESSAGE T_MESSAGE;
-  typedef typename T_CONFIG::T_FILE_APPEND_POLICY T_FILE_APPEND_POLICY;
+  typedef typename T_CONFIG::T_FILE_APPEND_STRATEGY T_FILE_APPEND_STRATEGY;
   typedef typename T_CONFIG::T_FILE_NAMING_STRATEGY T_FILE_NAMING_STRATEGY;
+  template <typename FILE_SYSTEM>
+  using T_RETRY_STRATEGY = typename T_CONFIG::template T_RETRY_STRATEGY<FILE_SYSTEM>;
+  typedef T_RETRY_STRATEGY<typename CONFIG::T_FILE_SYSTEM> T_RETRY_STRATEGY_INSTANCE;
   typedef typename T_CONFIG::T_FILE_SYSTEM T_FILE_SYSTEM;
   typedef typename T_CONFIG::T_TIME_MANAGER T_TIME_MANAGER;
-  typedef typename T_CONFIG::T_FINALIZE_POLICY T_FINALIZE_POLICY;
-  typedef typename T_CONFIG::T_PURGE_POLICY T_PURGE_POLICY;
-  template <class TIME_MANAGER, class FILE_SYSTEM>
-  using T_RETRY_POLICY = typename T_CONFIG::template T_RETRY_POLICY<TIME_MANAGER, FILE_SYSTEM>;
+  typedef typename T_CONFIG::T_FINALIZE_STRATEGY T_FINALIZE_STRATEGY;
 
   typedef typename T_TIME_MANAGER::T_TIMESTAMP T_TIMESTAMP;
   typedef typename T_TIME_MANAGER::T_TIME_SPAN T_TIME_SPAN;
@@ -82,14 +84,22 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   // The constructor initializes all the parameters and starts the worker thread.
   FSQ(T_PROCESSOR& processor,
       const std::string& working_directory,
-      const T_TIME_MANAGER& time_manager = T_TIME_MANAGER(),
-      const T_FILE_SYSTEM& file_system = T_FILE_SYSTEM())
-      : processor_(processor),
+      const T_TIME_MANAGER& time_manager,
+      const T_FILE_SYSTEM& file_system,
+      const T_RETRY_STRATEGY_INSTANCE& retry_strategy)
+      : T_RETRY_STRATEGY_INSTANCE(retry_strategy),
+        processor_(processor),
         working_directory_(working_directory),
         time_manager_(time_manager),
         file_system_(file_system) {
     T_CONFIG::Initialize(*this);
     worker_thread_ = std::thread(&FSQ::WorkerThread, this);
+  }
+  FSQ(T_PROCESSOR& processor,
+      const std::string& working_directory,
+      const T_TIME_MANAGER& time_manager = T_TIME_MANAGER(),
+      const T_FILE_SYSTEM& file_system = T_FILE_SYSTEM())
+      : FSQ(processor, working_directory, time_manager, file_system, T_RETRY_STRATEGY_INSTANCE(file_system)) {
   }
 
   // Destructor gracefully terminates worker thread and optionally joins it.
@@ -138,25 +148,42 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       }
     } else {
       const T_TIMESTAMP now = time_manager_.Now();
-      const uint64_t message_size_in_bytes = T_FILE_APPEND_POLICY::MessageSizeInBytes(message);
+      const uint64_t message_size_in_bytes = T_FILE_APPEND_STRATEGY::MessageSizeInBytes(message);
       EnsureCurrentFileIsOpen(message_size_in_bytes, now);
       if (!current_file_ || current_file_->bad()) {
         throw FSQException();
       }
-      T_FILE_APPEND_POLICY::AppendToFile(*current_file_.get(), message);
+      T_FILE_APPEND_STRATEGY::AppendToFile(*current_file_.get(), message);
       status_.appended_file_size += message_size_in_bytes;
-      if (T_FINALIZE_POLICY::ShouldFinalize(status_, now)) {
+      if (T_FINALIZE_STRATEGY::ShouldFinalize(status_, now)) {
         FinalizeCurrentFile();
       }
     }
   }
 
+  // `ResumeProcessing() is used when a temporary reason of unavailability is now gone.
+  // A common usecase is if the processor sends files over network, and the network just became unavailable.
+  // In this case, on an event of network becoming available again, `ResumeProcessing()` should be called.
+  //
+  // `ResumeProcessing()` respects retransmission delays strategy. While the "Unavailability" event
+  // does not trigger retransmission logic, if, due to prior external factors, FSQ is in waiting mode
+  // for a while,
+  // `ResumeProcessing()` would not override that wait. Use `ForceProcessing()` for those forced overrides.
+  void ResumeProcessing() {
+    processing_suspended_ = false;
+    queue_status_condition_variable_.notify_all();
+  }
+
   // `ForceProcessing()` initiates processing of finalized files, if any.
-  // It is most commonly used to resume processing due to an externla event
-  // when it was suspended due to an `Unavailable` response from user processing code.
-  // Real life scenario: User code returns `Unavailable` due to the device going offline,
-  // all processing stops w/o retry policy being applied, `ForceProcessing()` is called
-  // to resume processing on an external event of the device being back online.
+  //
+  // THIS METHOD IS NOT SAFE, since using it based on a frequent external event, like "WiFi connected",
+  // may result in file queue processing to be started and re-started multiple times,
+  // skipping the retransmission delay logic.
+  //
+  // Only use `ForceProcessing()` when processing should start no matter what.
+  // Example: App just got updated, or a large external download has just been successfully completed.
+  //
+  // Use `ResumeProcessing()` in other cases.
   void ForceProcessing(bool force_finalize_current_file = false) {
     std::unique_lock<std::mutex> lock(status_mutex_);
     if (force_finalize_current_file || status_.finalized.queue.empty()) {
@@ -164,8 +191,17 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
         FinalizeCurrentFile(lock);
       }
     }
+    processing_suspended_ = false;
     force_processing_ = true;
     queue_status_condition_variable_.notify_all();
+  }
+
+  // `FinalizeCurrentFile()` forces the finalization of the currently appended file.
+  void FinalizeCurrentFile() {
+    if (current_file_) {
+      std::unique_lock<std::mutex> lock(status_mutex_);
+      FinalizeCurrentFile(lock);
+    }
   }
 
   // Removes all finalized and current files from disk.
@@ -203,13 +239,6 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       status_.appended_file_timestamp = T_TIMESTAMP(0);
       current_file_name_.clear();
       queue_status_condition_variable_.notify_all();
-    }
-  }
-
-  void FinalizeCurrentFile() {
-    if (current_file_) {
-      std::unique_lock<std::mutex> lock(status_mutex_);
-      FinalizeCurrentFile(lock);
     }
   }
 
@@ -274,26 +303,37 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       queue_status_condition_variable_.notify_all();
     }
 
-    // Step 4/4: Start processing finalized files via T_PROCESSOR, respecting retry policy.
+    // Step 4/4: Start processing finalized files via T_PROCESSOR, respecting retry strategy.
     while (true) {
       // Wait for a newly arrived file or another event to happen.
       std::unique_ptr<FileInfo<T_TIMESTAMP>> next_file;
       {
         std::unique_lock<std::mutex> lock(status_mutex_);
-        const auto predicate = [this]() {
-          if (force_worker_thread_shutdown_ && !T_CONFIG::ProcessQueueToTheEndOnShutdown()) {
+        const bricks::time::EPOCH_MILLISECONDS begin_ms = bricks::time::Now();
+        bricks::time::MILLISECONDS_INTERVAL wait_ms;
+        const bool should_wait = T_RETRY_STRATEGY_INSTANCE::ShouldWait(&wait_ms);
+        const auto predicate = [this, should_wait, begin_ms, wait_ms]() {
+          if (force_worker_thread_shutdown_) {
             return true;
           } else if (force_processing_) {
             return true;
+          } else if (processing_suspended_) {
+            return false;
+          } else if (should_wait && bricks::time::Now() - begin_ms < wait_ms) {
+            return false;
           } else if (!status_.finalized.queue.empty()) {
             return true;
           } else {
             return false;
           }
         };
-        // TODO(dkorolev): Retry delay should be handled here.
         if (!predicate()) {
-          queue_status_condition_variable_.wait(lock, predicate);
+          if (should_wait) {
+            queue_status_condition_variable_.wait_for(
+                lock, std::chrono::milliseconds(static_cast<uint64_t>(wait_ms)), predicate);
+          } else {
+            queue_status_condition_variable_.wait(lock, predicate);
+          }
         }
         if (!status_.finalized.queue.empty()) {
           next_file.reset(new FileInfo<T_TIMESTAMP>(status_.finalized.queue.front()));
@@ -311,15 +351,26 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       // Process the file, if available.
       if (next_file) {
         const FileProcessingResult result = processor_.OnFileReady(*next_file.get(), time_manager_.Now());
-        static_cast<void>(result);  // TODO(dkorolev): Insert retry logic here.
-        if (true) {
+        if (result == FileProcessingResult::Success || result == FileProcessingResult::SuccessAndMoved) {
           std::unique_lock<std::mutex> lock(status_mutex_);
+          processing_suspended_ = false;
           if (*next_file.get() == status_.finalized.queue.front()) {
             status_.finalized.queue.pop_front();
           } else {
             // The `front()` part of the queue should only be altered by this worker thread.
             throw FSQException();
           }
+          if (result == FileProcessingResult::Success) {
+            T_FILE_SYSTEM::RemoveFile(next_file->full_path_name);
+          }
+          T_RETRY_STRATEGY_INSTANCE::OnSuccess();
+        } else if (result == FileProcessingResult::Unavailable) {
+          std::unique_lock<std::mutex> lock(status_mutex_);
+          processing_suspended_ = true;
+        } else if (result == FileProcessingResult::FailureNeedRetry) {
+          T_RETRY_STRATEGY_INSTANCE::OnFailure();
+        } else {
+          throw FSQException();
         }
       }
     }
@@ -342,6 +393,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   std::string current_file_name_;
 
   std::thread worker_thread_;
+  bool processing_suspended_ = false;
   bool force_processing_ = false;
   bool force_worker_thread_shutdown_ = false;
 
