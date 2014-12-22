@@ -1,7 +1,13 @@
-#ifndef BRICKS_TIME_TIME_H
-#define BRICKS_TIME_TIME_H
+// This file can not be named `time.h`, since it would interfere with C/C++ standard header.
 
+#ifndef BRICKS_TIME_CHRONO_H
+#define BRICKS_TIME_CHRONO_H
+
+#include <chrono>
+
+#include "../port.h"
 #include "../strings/fixed_size_serializer.h"
+
 // TODO(dkorolev): Add platform-dependent tests comparing Bricks time to UNIX time.
 
 namespace bricks {
@@ -10,6 +16,8 @@ namespace time {
 
 enum class EPOCH_MILLISECONDS : uint64_t {};
 enum class MILLISECONDS_INTERVAL : uint64_t {};
+
+#ifndef BRICKS_ANDROID
 
 // Since chrono::system_clock is not monotonic, and chrono::steady_clock is not guaranteed to be Epoch,
 // use a simple wrapper around chrono::system_clock to make it non-decreasing.
@@ -24,7 +32,7 @@ struct EpochClockGuaranteeingMonotonicity {
     }
   };
   static const Impl& Singleton() {
-    static Impl singleton;
+    static thread_local Impl singleton;
     return singleton;
   }
 };
@@ -32,6 +40,16 @@ struct EpochClockGuaranteeingMonotonicity {
 inline EPOCH_MILLISECONDS Now() {
   return static_cast<EPOCH_MILLISECONDS>(EpochClockGuaranteeingMonotonicity::Singleton().Now());
 }
+
+#else
+
+// Android C++ compiler doesn't support `thread_local`, fall back to the naive implementation.
+inline EPOCH_MILLISECONDS Now() {
+  return static_cast<EPOCH_MILLISECONDS>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                             std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
+#endif
 
 }  // namespace time
 
