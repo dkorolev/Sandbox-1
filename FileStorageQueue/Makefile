@@ -8,10 +8,14 @@ PWD=$(shell pwd)
 SRC=$(wildcard *.cc)
 BIN=$(SRC:%.cc=build/%)
 
+LATENCY_TEST=./build/test_retry_strategy --verbose=false --gtest_break_on_failure --gtest_repeat=50
+
 test: all
-	./build/test
-	# TODO(dkorolev): More test cases. Delay parameters are passed via command line flags.
-	./build/test_retry_strategy
+	./build/test && \
+	${LATENCY_TEST} --number_of_failures=1 --mean_ms=250 --min_ms=0 --max_ms=1000 --p25_max=150 --p75_min=250 && \
+	${LATENCY_TEST} --number_of_failures=3 --mean_ms=50 --min_ms=0 --max_ms=500 --p25_max=120 --p75_min=150 && \
+	${LATENCY_TEST} --number_of_failures=10 --mean_ms=50 --min_ms=0 --max_ms=500 --p25_max=450 --p75_min=550 && \
+	echo "ALL TESTS PASSED"
 
 all: build ${BIN}
 

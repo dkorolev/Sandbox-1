@@ -103,7 +103,7 @@ double Percentile(double p, const std::vector<T>& x) {
   return result;
 }
 
-TEST(FileSystemQueueLatenciesTest, NoLatency) {
+TEST(FileSystemQueueLatenciesTest, LatencyPercentiles) {
   std::atomic_size_t counter(0);
 
   struct Worker final {
