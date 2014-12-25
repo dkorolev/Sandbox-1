@@ -126,11 +126,13 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   }
 
   const Status GetQueueStatus() const {
-    std::unique_lock<std::mutex> lock(status_mutex_);
-    while (!status_ready_) {
-      queue_status_condition_variable_.wait(lock);
-      if (force_worker_thread_shutdown_) {
-        throw FSQException();
+    if (!status_ready_) {
+      std::unique_lock<std::mutex> lock(status_mutex_);
+      while (!status_ready_) {
+        queue_status_condition_variable_.wait(lock);
+        if (force_worker_thread_shutdown_) {
+          throw FSQException();
+        }
       }
     }
     // Returning `status_` by const reference is not thread-safe, return a copy from a locked section.
@@ -139,6 +141,13 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
 
   // `PushMessage()` appends data to the queue.
   void PushMessage(const T_MESSAGE& message) {
+    if (!status_ready_) {
+      // Need to wait for the status to be ready, otherwise current file resume might not happen.
+      std::unique_lock<std::mutex> lock(status_mutex_);
+      while (!status_ready_) {
+        queue_status_condition_variable_.wait(lock);
+      }
+    }
     if (force_worker_thread_shutdown_) {
       if (T_CONFIG::NoThrowOnPushMessageWhileShuttingDown()) {
         // Silently ignoring incoming messages while in shutdown mode is the default strategy.
@@ -235,6 +244,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
           status_.appended_file_size);
       T_FILE_SYSTEM::RenameFile(current_file_name_, finalized_file_info.full_path_name);
       status_.finalized.queue.push_back(finalized_file_info);
+      status_.finalized.total_size += status_.appended_file_size;
       status_.appended_file_size = 0;
       status_.appended_file_timestamp = T_TIMESTAMP(0);
       current_file_name_.clear();
@@ -269,7 +279,9 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
     if (!current_file_) {
       current_file_name_ =
           T_FILE_SYSTEM::JoinPath(working_directory_, T_FILE_NAMING_STRATEGY::current.GenerateFileName(now));
-      current_file_.reset(new typename T_FILE_SYSTEM::OutputFile(current_file_name_));
+      // TODO(dkorolev): This relies on OutputFile being std::ofstream. Fine for now anyway.
+      current_file_.reset(new typename T_FILE_SYSTEM::OutputFile(current_file_name_,
+                                                                 std::ofstream::trunc | std::ofstream::binary));
       status_.appended_file_timestamp = now;
     }
   }
@@ -293,8 +305,31 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
     // Step 2/4: Get the list of current files.
     const FileInfoVector& current_files_on_disk = ScanDir([this](
         const std::string& s, T_TIMESTAMP* t) { return T_FILE_NAMING_STRATEGY::current.ParseFileName(s, t); });
-    // TODO(dkorolev): Finalize all or all but one `current` files. Rename them and append them to the queue.
-    static_cast<void>(current_files_on_disk);
+    if (!current_files_on_disk.empty()) {
+      const bool resume = T_CONFIG::ShouldResumeCurrentFile();
+      const size_t number_of_files_to_finalize = current_files_on_disk.size() - (resume ? 1u : 0u);
+      for (size_t i = 0; i < number_of_files_to_finalize; ++i) {
+        const FileInfo<T_TIMESTAMP>& f = current_files_on_disk[i];
+        const std::string finalized_file_name = T_FILE_NAMING_STRATEGY::finalized.GenerateFileName(f.timestamp);
+        FileInfo<T_TIMESTAMP> finalized_file_info(
+            finalized_file_name,
+            T_FILE_SYSTEM::JoinPath(working_directory_, finalized_file_name),
+            f.timestamp,
+            f.size);
+        T_FILE_SYSTEM::RenameFile(f.full_path_name, finalized_file_info.full_path_name);
+        status_.finalized.queue.push_back(finalized_file_info);
+        status_.finalized.total_size += f.size;
+      }
+      if (resume) {
+        const FileInfo<T_TIMESTAMP>& c = current_files_on_disk.back();
+        status_.appended_file_timestamp = c.timestamp;
+        status_.appended_file_size = c.size;
+        current_file_name_ = c.full_path_name;
+        // TODO(dkorolev): This relies on OutputFile being std::ofstream. Fine for now anyway.
+        current_file_.reset(new typename T_FILE_SYSTEM::OutputFile(current_file_name_,
+                                                                   std::ofstream::app | std::ofstream::binary));
+      }
+    }
 
     // Step 3/4: Signal that FSQ's status has been successfully parsed from disk and FSQ is ready to go.
     {
