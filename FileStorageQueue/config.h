@@ -32,12 +32,6 @@ struct Config {
   typedef strategy::KeepFilesAround100KBUnlessNoBacklog T_FINALIZE_STRATEGY;
   typedef strategy::KeepUnder20MBAndUnder1KFiles T_PURGE_STRATEGY;
 
-  // Set to false to always finalize all existing current files at startup.
-  // Keep as true to resume the previously written to current file.
-  inline static bool ShouldResumeCurrentFile() {
-    return true;
-  }
-
   // Set to true to have FSQ detach the processing thread instead of joining it in destructor.
   inline static bool DetachProcessingThreadOnTermination() {
     return false;

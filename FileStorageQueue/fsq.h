@@ -60,7 +60,6 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
                   public CONFIG::T_FINALIZE_STRATEGY,
                   public CONFIG::T_PURGE_STRATEGY,
                   public CONFIG::T_FILE_APPEND_STRATEGY,
-                  public CONFIG::T_FILE_RESUME_STRATEGY,
                   public CONFIG::template T_RETRY_STRATEGY<typename CONFIG::T_FILE_SYSTEM> {
  public:
   typedef CONFIG T_CONFIG;

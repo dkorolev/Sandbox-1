@@ -44,7 +44,7 @@ class AppendToFileWithSeparator {
 
 // Default resume strategy: Always resume.
 struct AlwaysResume {
-  inline bool ShouldResume() const {
+  inline static bool ShouldResume() {
     return true;
   }
 };

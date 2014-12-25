@@ -76,7 +76,16 @@ struct MockConfig : fsq::Config<TestOutputFilesProcessor> {
   }
 };
 
+struct NoResumeMockConfig : MockConfig {
+  struct T_FILE_RESUME_STRATEGY {
+    inline static bool ShouldResume() {
+      return false;
+    }
+  };
+};
+
 typedef fsq::FSQ<MockConfig> FSQ;
+typedef fsq::FSQ<NoResumeMockConfig> NoResumeFSQ;
 
 // Observe messages being processed as they exceed 20 bytes of size.
 TEST(FileSystemQueueTest, FinalizedBySize) {
@@ -259,4 +268,40 @@ TEST(FileSystemQueueTest, ResumesOnlyExistingFileAndFinalizesTheRest) {
   EXPECT_EQ(1u, processor.finalized_count);
   EXPECT_EQ("finalized-00000000000000000003.bin", processor.filenames);
   EXPECT_EQ("three\nfour\n", processor.contents);
+}
+
+// Confirm the existing file is not resumed if the strategy dictates so.
+TEST(FileSystemQueueTest, ResumeCanBeTurnedOff) {
+  TestOutputFilesProcessor processor;
+  MockTime mock_wall_time;
+
+  {
+    // Initialize a temporary FSQ to remove older files.
+    FSQ fsq(processor, kTestDir, mock_wall_time);
+    fsq.RemoveAllFSQFiles();
+  }
+
+  bricks::WriteStringToFile(bricks::FileSystem::JoinPath(kTestDir, "current-00000000000000000000.bin"),
+                            "meh\n");
+
+  NoResumeFSQ fsq(processor, kTestDir, mock_wall_time);
+
+  while (processor.finalized_count != 1) {
+    ;  // Spin lock.
+  }
+
+  EXPECT_EQ("finalized-00000000000000000000.bin", processor.filenames);
+  EXPECT_EQ("meh\n", processor.contents);
+
+  mock_wall_time.now = 1;
+  fsq.PushMessage("wow");
+
+  fsq.ForceProcessing();
+  while (processor.finalized_count != 2) {
+    ;  // Spin lock.
+  }
+
+  EXPECT_EQ(2u, processor.finalized_count);
+  EXPECT_EQ("finalized-00000000000000000000.bin|finalized-00000000000000000001.bin", processor.filenames);
+  EXPECT_EQ("meh\nFILE SEPARATOR\nwow\n", processor.contents);
 }
