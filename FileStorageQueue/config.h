@@ -31,23 +31,29 @@ struct Config {
   typedef strategy::KeepFilesAround100KBUnlessNoBacklog T_FINALIZE_STRATEGY;
   typedef strategy::KeepUnder20MBAndUnder1KFiles T_PURGE_STRATEGY;
 
+  // Set to false to always finalize all existing current files at startup.
+  // Keep as true to resume the previously written to current file.
+  inline static bool ShouldResumeCurrentFile() {
+    return true;
+  }
+
   // Set to true to have FSQ detach the processing thread instead of joining it in destructor.
-  static bool DetachProcessingThreadOnTermination() {
+  inline static bool DetachProcessingThreadOnTermination() {
     return false;
   }
 
   // Set to false to have PushMessage() throw an exception when attempted to push while shutting down.
-  static bool NoThrowOnPushMessageWhileShuttingDown() {
+  inline static bool NoThrowOnPushMessageWhileShuttingDown() {
     return true;
   }
 
   // Set to true to have FSQ process all queued files in destructor before returning.
-  static bool ProcessQueueToTheEndOnShutdown() {
+  inline static bool ProcessQueueToTheEndOnShutdown() {
     return false;
   }
 
   template <typename T_FSQ_INSTANCE>
-  static void Initialize(T_FSQ_INSTANCE&) {
+  inline static void Initialize(T_FSQ_INSTANCE&) {
     // `T_CONFIG::Initialize(*this)` is invoked from FSQ's constructor
     // User-derived Config-s can put non-static initialization code here.
   }

@@ -1,3 +1,5 @@
+// TODO(dkorolev): Tests for purging files.
+
 #include <atomic>
 
 #include "fsq.h"
@@ -16,16 +18,29 @@ const char* const kTestDir = "build/";
 struct TestOutputFilesProcessor {
   TestOutputFilesProcessor() : finalized_count(0) {
   }
+
   fsq::FileProcessingResult OnFileReady(const fsq::FileInfo<uint64_t>& file_info, uint64_t now) {
-    filename = file_info.name;
-    contents = bricks::ReadFileAsString(file_info.full_path_name);
+    if (!finalized_count) {
+      contents = bricks::ReadFileAsString(file_info.full_path_name);
+      filenames = file_info.name;
+    } else {
+      contents = contents + "FILE SEPARATOR\n" + bricks::ReadFileAsString(file_info.full_path_name);
+      filenames = filenames + "|" + file_info.name;
+    }
     timestamp = now;
-    finalized_count = true;
+    ++finalized_count;
     return fsq::FileProcessingResult::Success;
   }
 
+  void ClearStats() {
+    finalized_count = 0;
+    filenames = "";
+    contents = "";
+    timestamp = 0;
+  }
+
   atomic_size_t finalized_count;
-  string filename = "";
+  string filenames = "";
   string contents = "";
   uint64_t timestamp = 0;
 };
@@ -57,7 +72,6 @@ struct MockConfig : fsq::Config<TestOutputFilesProcessor> {
   // Non-static initialization.
   template <typename T_FSQ_INSTANCE>
   static void Initialize(T_FSQ_INSTANCE& instance) {
-    instance.RemoveAllFSQFiles();
     instance.SetSeparator("\n");
   }
 };
@@ -69,6 +83,7 @@ TEST(FileSystemQueueTest, FinalizedBySize) {
   TestOutputFilesProcessor processor;
   MockTime mock_wall_time;
   FSQ fsq(processor, kTestDir, mock_wall_time);
+  fsq.RemoveAllFSQFiles();
 
   // Confirm the queue is empty.
   EXPECT_EQ(0ull, fsq.GetQueueStatus().appended_file_size);
@@ -95,7 +110,7 @@ TEST(FileSystemQueueTest, FinalizedBySize) {
   }
 
   EXPECT_EQ(1u, processor.finalized_count);
-  EXPECT_EQ("finalized-00000000000000000101.bin", processor.filename);
+  EXPECT_EQ("finalized-00000000000000000101.bin", processor.filenames);
   EXPECT_EQ("this is\na test\nnow go ahead and process this stuff\n", processor.contents);
   EXPECT_EQ(103ull, processor.timestamp);
 }
@@ -105,6 +120,7 @@ TEST(FileSystemQueueTest, FinalizedByAge) {
   TestOutputFilesProcessor processor;
   MockTime mock_wall_time;
   FSQ fsq(processor, kTestDir, mock_wall_time);
+  fsq.RemoveAllFSQFiles();
 
   // Confirm the queue is empty.
   EXPECT_EQ(0ull, fsq.GetQueueStatus().appended_file_size);
@@ -132,7 +148,7 @@ TEST(FileSystemQueueTest, FinalizedByAge) {
   }
 
   EXPECT_EQ(1u, processor.finalized_count);
-  EXPECT_EQ("finalized-00000000000000010000.bin", processor.filename);
+  EXPECT_EQ("finalized-00000000000000010000.bin", processor.filenames);
   EXPECT_EQ("this too\nshall\npass\n", processor.contents);
   EXPECT_EQ(21000ull, processor.timestamp);
 }
@@ -142,6 +158,7 @@ TEST(FileSystemQueueTest, ForceProcessing) {
   TestOutputFilesProcessor processor;
   MockTime mock_wall_time;
   FSQ fsq(processor, kTestDir, mock_wall_time);
+  fsq.RemoveAllFSQFiles();
 
   // Confirm the queue is empty.
   EXPECT_EQ(0ull, fsq.GetQueueStatus().appended_file_size);
@@ -168,23 +185,78 @@ TEST(FileSystemQueueTest, ForceProcessing) {
   }
 
   EXPECT_EQ(1u, processor.finalized_count);
-  EXPECT_EQ("finalized-00000000000000001001.bin", processor.filename);
+  EXPECT_EQ("finalized-00000000000000001001.bin", processor.filenames);
   EXPECT_EQ("foo\nbar\nbaz\n", processor.contents);
   EXPECT_EQ(1003ull, processor.timestamp);
 }
 
-/*
+// Confirm the existing file is resumed.
+TEST(FileSystemQueueTest, ResumesExistingFile) {
+  TestOutputFilesProcessor processor;
+  MockTime mock_wall_time;
 
-TEST(FileSystemQueueTest, KeepsSameFile);
-TEST(FileSystemQueueTest, RenamedFileBecauseOfSize);
-TEST(FileSystemQueueTest, RenamedFileBecauseOfAge);
-TEST(FileSystemQueueTest, Scan the directory on startup.);
-TEST(FileSystemQueueTest, Resume already existing append-only file.);
-TEST(FileSystemQueueTest, Correctly extract timestamps from all the files, including the temporary one.);
-TEST(FileSystemQueueTest, Rename the current file right away if it should be renamed, before any work.);
-TEST(FileSystemQueueTest, Time skew.);
-TEST(FileSystemQueueTest, Custom finalize strategy.);
-TEST(FileSystemQueueTest, Custom append strategy.);
-TEST(FileSystemQueueTest, ConfirmProcessingTakesPlaceBeforeNewFileIsCreated);
+  {
+    // Initialize a temporary FSQ to remove older files.
+    FSQ fsq(processor, kTestDir, mock_wall_time);
+    fsq.RemoveAllFSQFiles();
+  }
 
-*/
+  bricks::WriteStringToFile(bricks::FileSystem::JoinPath(kTestDir, "current-00000000000000000001.bin"),
+                            "meh\n");
+
+  FSQ fsq(processor, kTestDir, mock_wall_time);
+
+  mock_wall_time.now = 1;
+  fsq.PushMessage("wow");
+
+  fsq.ForceProcessing();
+  while (!processor.finalized_count) {
+    ;  // Spin lock.
+  }
+
+  EXPECT_EQ(1u, processor.finalized_count);
+  EXPECT_EQ("finalized-00000000000000000001.bin", processor.filenames);
+  EXPECT_EQ("meh\nwow\n", processor.contents);
+}
+
+// Confirm only one existing file is resumed, the rest are finalized.
+TEST(FileSystemQueueTest, ResumesOnlyExistingFileAndFinalizesTheRest) {
+  TestOutputFilesProcessor processor;
+  MockTime mock_wall_time;
+
+  {
+    // Initialize a temporary FSQ to remove older files.
+    FSQ fsq(processor, kTestDir, mock_wall_time);
+    fsq.RemoveAllFSQFiles();
+  }
+
+  bricks::WriteStringToFile(bricks::FileSystem::JoinPath(kTestDir, "current-00000000000000000001.bin"),
+                            "one\n");
+  bricks::WriteStringToFile(bricks::FileSystem::JoinPath(kTestDir, "current-00000000000000000002.bin"),
+                            "two\n");
+  bricks::WriteStringToFile(bricks::FileSystem::JoinPath(kTestDir, "current-00000000000000000003.bin"),
+                            "three\n");
+
+  FSQ fsq(processor, kTestDir, mock_wall_time);
+
+  while (processor.finalized_count != 2) {
+    ;  // Spin lock.
+  }
+
+  EXPECT_EQ(2u, processor.finalized_count);
+  EXPECT_EQ("finalized-00000000000000000001.bin|finalized-00000000000000000002.bin", processor.filenames);
+  EXPECT_EQ("one\nFILE SEPARATOR\ntwo\n", processor.contents);
+  processor.ClearStats();
+
+  mock_wall_time.now = 4;
+  fsq.PushMessage("four");
+
+  fsq.ForceProcessing();
+  while (processor.finalized_count != 1) {
+    ;  // Spin lock.
+  }
+
+  EXPECT_EQ(1u, processor.finalized_count);
+  EXPECT_EQ("finalized-00000000000000000003.bin", processor.filenames);
+  EXPECT_EQ("three\nfour\n", processor.contents);
+}
