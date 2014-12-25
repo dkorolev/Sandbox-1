@@ -23,6 +23,7 @@ struct Config {
   typedef PROCESSOR T_PROCESSOR;
   typedef std::string T_MESSAGE;
   typedef strategy::JustAppendToFile T_FILE_APPEND_STRATEGY;
+  typedef strategy::AlwaysResume T_FILE_RESUME_STRATEGY;
   typedef strategy::DummyFileNamingToUnblockAlexFromMinsk T_FILE_NAMING_STRATEGY;
   template <typename FILESYSTEM>
   using T_RETRY_STRATEGY = strategy::ExponentialDelayRetryStrategy<FILESYSTEM>;

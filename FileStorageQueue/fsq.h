@@ -60,6 +60,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
                   public CONFIG::T_FINALIZE_STRATEGY,
                   public CONFIG::T_PURGE_STRATEGY,
                   public CONFIG::T_FILE_APPEND_STRATEGY,
+                  public CONFIG::T_FILE_RESUME_STRATEGY,
                   public CONFIG::template T_RETRY_STRATEGY<typename CONFIG::T_FILE_SYSTEM> {
  public:
   typedef CONFIG T_CONFIG;
@@ -67,6 +68,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   typedef typename T_CONFIG::T_PROCESSOR T_PROCESSOR;
   typedef typename T_CONFIG::T_MESSAGE T_MESSAGE;
   typedef typename T_CONFIG::T_FILE_APPEND_STRATEGY T_FILE_APPEND_STRATEGY;
+  typedef typename T_CONFIG::T_FILE_RESUME_STRATEGY T_FILE_RESUME_STRATEGY;
   typedef typename T_CONFIG::T_FILE_NAMING_STRATEGY T_FILE_NAMING_STRATEGY;
   template <typename FILE_SYSTEM>
   using T_RETRY_STRATEGY = typename T_CONFIG::template T_RETRY_STRATEGY<FILE_SYSTEM>;
@@ -306,7 +308,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
     const FileInfoVector& current_files_on_disk = ScanDir([this](
         const std::string& s, T_TIMESTAMP* t) { return T_FILE_NAMING_STRATEGY::current.ParseFileName(s, t); });
     if (!current_files_on_disk.empty()) {
-      const bool resume = T_CONFIG::ShouldResumeCurrentFile();
+      const bool resume = T_FILE_RESUME_STRATEGY::ShouldResume();
       const size_t number_of_files_to_finalize = current_files_on_disk.size() - (resume ? 1u : 0u);
       for (size_t i = 0; i < number_of_files_to_finalize; ++i) {
         const FileInfo<T_TIMESTAMP>& f = current_files_on_disk[i];
