@@ -23,6 +23,7 @@ struct Config {
   typedef PROCESSOR T_PROCESSOR;
   typedef std::string T_MESSAGE;
   typedef strategy::JustAppendToFile T_FILE_APPEND_STRATEGY;
+  typedef strategy::AlwaysResume T_FILE_RESUME_STRATEGY;
   typedef strategy::DummyFileNamingToUnblockAlexFromMinsk T_FILE_NAMING_STRATEGY;
   template <typename FILESYSTEM>
   using T_RETRY_STRATEGY = strategy::ExponentialDelayRetryStrategy<FILESYSTEM>;
@@ -30,12 +31,6 @@ struct Config {
   typedef strategy::UseEpochMilliseconds T_TIME_MANAGER;
   typedef strategy::KeepFilesAround100KBUnlessNoBacklog T_FINALIZE_STRATEGY;
   typedef strategy::KeepUnder20MBAndUnder1KFiles T_PURGE_STRATEGY;
-
-  // Set to false to always finalize all existing current files at startup.
-  // Keep as true to resume the previously written to current file.
-  inline static bool ShouldResumeCurrentFile() {
-    return true;
-  }
 
   // Set to true to have FSQ detach the processing thread instead of joining it in destructor.
   inline static bool DetachProcessingThreadOnTermination() {

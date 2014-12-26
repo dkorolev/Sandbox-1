@@ -42,6 +42,13 @@ class AppendToFileWithSeparator {
   std::string separator_ = "";
 };
 
+// Default resume strategy: Always resume.
+struct AlwaysResume {
+  inline static bool ShouldResume() {
+    return true;
+  }
+};
+
 // A dummy retry strategy: Always process, no need to retry.
 template <class FILE_SYSTEM>
 class AlwaysProcessNoNeedToRetry {
@@ -132,18 +139,19 @@ struct SimpleFinalizationStrategy {
   }
 };
 
-struct KeepFilesAround100KBUnlessNoBacklog
-    : SimpleFinalizationStrategy<bricks::time::EPOCH_MILLISECONDS,
-                                 bricks::time::MILLISECONDS_INTERVAL,
-                                 100 * 1024,
-                                 bricks::time::MILLISECONDS_INTERVAL(24 * 60 * 60 * 1000),
-                                 10 * 1024,
-                                 bricks::time::MILLISECONDS_INTERVAL(10 * 60 * 1000)> {};
+typedef SimpleFinalizationStrategy<bricks::time::EPOCH_MILLISECONDS,
+                                   bricks::time::MILLISECONDS_INTERVAL,
+                                   100 * 1024,
+                                   bricks::time::MILLISECONDS_INTERVAL(24 * 60 * 60 * 1000),
+                                   10 * 1024,
+                                   bricks::time::MILLISECONDS_INTERVAL(10 * 60 * 1000)>
+    KeepFilesAround100KBUnlessNoBacklog;
 
 // Default file purge strategy: Keeps under 1K files of under 20MB of total size.
 template <uint64_t MAX_TOTAL_SIZE, size_t MAX_FILES>
 struct SimplePurgeStrategy {
-  bool ShouldPurge(const QueueStatus<bricks::time::EPOCH_MILLISECONDS>& status) const {
+  template <typename T_TIMESTAMP>
+  bool ShouldPurge(const QueueStatus<T_TIMESTAMP>& status) const {
     if (status.finalized.total_size + status.appended_file_size > MAX_TOTAL_SIZE) {
       // Purge the oldest files if the total size of data stored in the queue exceeds MAX_TOTAL_SIZE.
       return true;
@@ -157,7 +165,7 @@ struct SimplePurgeStrategy {
   }
 };
 
-struct KeepUnder20MBAndUnder1KFiles : SimplePurgeStrategy<20 * 1024 * 1024, 1000> {};
+typedef SimplePurgeStrategy<20 * 1024 * 1024, 1000> KeepUnder20MBAndUnder1KFiles;
 
 }  // namespace strategy
 }  // namespace fsq
