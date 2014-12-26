@@ -80,12 +80,7 @@ struct LatencyMeasuringProcessor final {
   EPOCH_MILLISECONDS message_processed_timestamp_;
 };
 
-struct TestConfig : fsq::Config<LatencyMeasuringProcessor> {
-  template <typename T_FSQ_INSTANCE>
-  static void Initialize(T_FSQ_INSTANCE& instance) {
-    instance.RemoveAllFSQFiles();
-  }
-};
+typedef fsq::Config<LatencyMeasuringProcessor> TestConfig;
 
 template <typename T>
 double Percentile(double p, const std::vector<T>& x) {
@@ -104,8 +99,6 @@ double Percentile(double p, const std::vector<T>& x) {
 }
 
 TEST(FileSystemQueueLatenciesTest, LatencyPercentiles) {
-  std::atomic_size_t counter(0);
-
   struct Worker final {
     typedef fsq::strategy::ExponentialDelayRetryStrategy<bricks::FileSystem> ExpRetry;
     Worker(int index, std::atomic_size_t& counter)
@@ -140,9 +133,12 @@ TEST(FileSystemQueueLatenciesTest, LatencyPercentiles) {
                                    processor_.message_push_timestamp_);
     }
 
+    static std::string GenDirName(int index) {
+      return bricks::FileSystem::JoinPath(FLAGS_tmpdir, bricks::strings::Printf("%05d", index));
+    }
+
     static std::string GenDirNameAndCreateDir(int index) {
-      std::string directory_name =
-          bricks::FileSystem::JoinPath(FLAGS_tmpdir, bricks::strings::Printf("%05d", index));
+      std::string directory_name = GenDirName(index);
       bricks::FileSystem::CreateDirectory(directory_name);
       return directory_name;
     }
@@ -154,7 +150,22 @@ TEST(FileSystemQueueLatenciesTest, LatencyPercentiles) {
     fsq::FSQ<TestConfig> fsq_;
   };
 
+  // Cleanup first.
   const size_t N = static_cast<size_t>(FLAGS_n);
+  for (size_t i = 0; i < N; ++i) {
+    struct DummyProcessor final {
+      DummyProcessor() {
+      }
+      fsq::FileProcessingResult OnFileReady(const fsq::FileInfo<EPOCH_MILLISECONDS>&, EPOCH_MILLISECONDS) {
+        return fsq::FileProcessingResult::Success;
+      }
+    };
+    DummyProcessor processor;
+    fsq::FSQ<fsq::Config<DummyProcessor>>(processor, Worker::GenDirName(i + 1)).ShutdownAndRemoveAllFSQFiles();
+  }
+
+  // Now, run the test.
+  std::atomic_size_t counter(0);
   std::vector<std::unique_ptr<Worker>> workers;
   for (size_t i = 0; i < N; ++i) {
     workers.emplace_back(new Worker(i + 1, counter));

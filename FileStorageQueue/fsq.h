@@ -75,6 +75,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   typedef typename T_CONFIG::T_FILE_SYSTEM T_FILE_SYSTEM;
   typedef typename T_CONFIG::T_TIME_MANAGER T_TIME_MANAGER;
   typedef typename T_CONFIG::T_FINALIZE_STRATEGY T_FINALIZE_STRATEGY;
+  typedef typename T_CONFIG::T_PURGE_STRATEGY T_PURGE_STRATEGY;
 
   typedef typename T_TIME_MANAGER::T_TIMESTAMP T_TIMESTAMP;
   typedef typename T_TIME_MANAGER::T_TIME_SPAN T_TIME_SPAN;
@@ -113,11 +114,13 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
     }
     // Close the current file. `current_file_.reset(nullptr);` is always safe especially in destructor.
     current_file_.reset(nullptr);
-    // Either wait for the processor thread to terminate or detach it.
-    if (T_CONFIG::DetachProcessingThreadOnTermination()) {
-      worker_thread_.detach();
-    } else {
-      worker_thread_.join();
+    // Either wait for the processor thread to terminate or detach it, unless it's already done.
+    if (worker_thread_.joinable()) {
+      if (T_CONFIG::DetachProcessingThreadOnTermination()) {
+        worker_thread_.detach();
+      } else {
+        worker_thread_.join();
+      }
     }
   }
 
@@ -159,7 +162,16 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
     } else {
       const T_TIMESTAMP now = time_manager_.Now();
       const uint64_t message_size_in_bytes = T_FILE_APPEND_STRATEGY::MessageSizeInBytes(message);
-      EnsureCurrentFileIsOpen(message_size_in_bytes, now);
+      {
+        // Take current message size into consideration when making file finalization decision.
+        status_.appended_file_size += message_size_in_bytes;
+        const bool should_finalize = T_FINALIZE_STRATEGY::ShouldFinalize(status_, now);
+        status_.appended_file_size -= message_size_in_bytes;
+        if (should_finalize) {
+          FinalizeCurrentFile();
+        }
+      }
+      EnsureCurrentFileIsOpen(now);
       if (!current_file_ || current_file_->bad()) {
         throw FSQException();
       }
@@ -215,15 +227,21 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   }
 
   // Removes all finalized and current files from disk.
+  // Has to shut down as well, since removing files does not play well with the worker thread processing them.
   // USE CAREFULLY!
-  void RemoveAllFSQFiles() const {
-    for (const auto& file : ScanDir([this](const std::string& s, T_TIMESTAMP* t) {
-           return T_FILE_NAMING_STRATEGY::finalized.ParseFileName(s, t);
-         })) {
-      T_FILE_SYSTEM::RemoveFile(file.full_path_name);
+  void ShutdownAndRemoveAllFSQFiles() {
+    // First, force the worker thread to terminate.
+    {
+      std::unique_lock<std::mutex> lock(status_mutex_);
+      force_worker_thread_shutdown_ = true;
+      queue_status_condition_variable_.notify_all();
     }
+    current_file_.reset(nullptr);
+    worker_thread_.join();
+    // Scan the directory and remove the files.
     for (const auto& file : ScanDir([this](const std::string& s, T_TIMESTAMP* t) {
-           return T_FILE_NAMING_STRATEGY::current.ParseFileName(s, t);
+           return T_FILE_NAMING_STRATEGY::finalized.ParseFileName(s, t) ||
+                  T_FILE_NAMING_STRATEGY::current.ParseFileName(s, t);
          })) {
       T_FILE_SYSTEM::RemoveFile(file.full_path_name);
     }
@@ -233,7 +251,6 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   // If the current file exists, declare it finalized, rename it under a permanent name
   // and notify the worker thread that a new file is available.
   void FinalizeCurrentFile(std::unique_lock<std::mutex>& already_acquired_status_mutex_lock) {
-    static_cast<void>(already_acquired_status_mutex_lock);
     if (current_file_) {
       current_file_.reset(nullptr);
       const std::string finalized_file_name =
@@ -249,6 +266,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       status_.appended_file_size = 0;
       status_.appended_file_timestamp = T_TIMESTAMP(0);
       current_file_name_.clear();
+      PurgeFilesAsNecessary(already_acquired_status_mutex_lock);
       queue_status_condition_variable_.notify_all();
     }
   }
@@ -275,8 +293,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   }
 
   // EnsureCurrentFileIsOpen() expires the current file and/or creates the new one as necessary.
-  void EnsureCurrentFileIsOpen(const uint64_t message_size_in_bytes, const T_TIMESTAMP now) {
-    static_cast<void>(message_size_in_bytes);  // TODO(dkorolev): Call purge, use `message_size_in_bytes`.
+  void EnsureCurrentFileIsOpen(const T_TIMESTAMP now) {
     if (!current_file_) {
       current_file_name_ =
           T_FILE_SYSTEM::JoinPath(working_directory_, T_FILE_NAMING_STRATEGY::current.GenerateFileName(now));
@@ -284,6 +301,17 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       current_file_.reset(new typename T_FILE_SYSTEM::OutputFile(current_file_name_,
                                                                  std::ofstream::trunc | std::ofstream::binary));
       status_.appended_file_timestamp = now;
+    }
+  }
+
+  // Purges the old files as necessary.
+  void PurgeFilesAsNecessary(std::unique_lock<std::mutex>& already_acquired_status_mutex_lock) {
+    static_cast<void>(already_acquired_status_mutex_lock);
+    while (!status_.finalized.queue.empty() && T_PURGE_STRATEGY::ShouldPurge(status_)) {
+      const std::string filename = status_.finalized.queue.front().full_path_name;
+      status_.finalized.total_size -= status_.finalized.queue.front().size;
+      status_.finalized.queue.pop_front();
+      T_FILE_SYSTEM::RemoveFile(filename);
     }
   }
 
@@ -330,6 +358,8 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
         current_file_.reset(new typename T_FILE_SYSTEM::OutputFile(current_file_name_,
                                                                    std::ofstream::app | std::ofstream::binary));
       }
+      std::unique_lock<std::mutex> lock(status_mutex_);
+      PurgeFilesAsNecessary(lock);
     }
 
     // Step 3/4: Signal that FSQ's status has been successfully parsed from disk and FSQ is ready to go.
@@ -392,6 +422,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
           std::unique_lock<std::mutex> lock(status_mutex_);
           processing_suspended_ = false;
           if (*next_file.get() == status_.finalized.queue.front()) {
+            status_.finalized.total_size -= status_.finalized.queue.front().size;
             status_.finalized.queue.pop_front();
           } else {
             // The `front()` part of the queue should only be altered by this worker thread.

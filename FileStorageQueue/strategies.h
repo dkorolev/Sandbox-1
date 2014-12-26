@@ -150,7 +150,8 @@ typedef SimpleFinalizationStrategy<bricks::time::EPOCH_MILLISECONDS,
 // Default file purge strategy: Keeps under 1K files of under 20MB of total size.
 template <uint64_t MAX_TOTAL_SIZE, size_t MAX_FILES>
 struct SimplePurgeStrategy {
-  bool ShouldPurge(const QueueStatus<bricks::time::EPOCH_MILLISECONDS>& status) const {
+  template <typename T_TIMESTAMP>
+  bool ShouldPurge(const QueueStatus<T_TIMESTAMP>& status) const {
     if (status.finalized.total_size + status.appended_file_size > MAX_TOTAL_SIZE) {
       // Purge the oldest files if the total size of data stored in the queue exceeds MAX_TOTAL_SIZE.
       return true;
