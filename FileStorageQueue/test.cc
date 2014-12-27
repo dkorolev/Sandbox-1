@@ -76,8 +76,8 @@ struct MockConfig : fsq::Config<TestOutputFilesProcessor> {
                                                     MockTime::T_TIME_SPAN(10 * 1000),
                                                     100,
                                                     MockTime::T_TIME_SPAN(60 * 1000)> T_FINALIZE_STRATEGY;
-  // Purge after 1000 bytes total or after 3 files.
-  typedef fsq::strategy::SimplePurgeStrategy<1000, 3> T_PURGE_STRATEGY;
+  // Purge after 50 bytes total or after 3 files.
+  typedef fsq::strategy::SimplePurgeStrategy<50, 3> T_PURGE_STRATEGY;
 
   // Non-static initialization.
   template <typename T_FSQ_INSTANCE>
@@ -371,4 +371,42 @@ TEST(FileSystemQueueTest, PurgesByNumberOfFiles) {
   EXPECT_EQ(15ul, fsq.GetQueueStatus().finalized.total_size);  // strlen("two\nthree\nfour\n").
   EXPECT_EQ("finalized-00000000000000100002.bin", fsq.GetQueueStatus().finalized.queue.front().name);
   EXPECT_EQ("finalized-00000000000000100004.bin", fsq.GetQueueStatus().finalized.queue.back().name);
+}
+
+// Purges the oldest files so that the total size of the queue never exceeds 20 bytes.
+TEST(FileSystemQueueTest, PurgesByTotalSize) {
+  CleanupOldFiles();
+
+  TestOutputFilesProcessor processor;
+  processor.SetMimicUnavailable();
+  MockTime mock_wall_time;
+  FSQ fsq(processor, kTestDir, mock_wall_time);
+
+  mock_wall_time.now = 100001;
+  fsq.PushMessage("one");
+  mock_wall_time.now = 100002;
+  fsq.PushMessage("two");
+  fsq.FinalizeCurrentFile();
+  mock_wall_time.now = 100003;
+  fsq.PushMessage("three");
+  mock_wall_time.now = 100004;
+  fsq.PushMessage("four");
+  fsq.FinalizeCurrentFile();
+
+  // Confirm the queue contains two files.
+  EXPECT_EQ(2u, fsq.GetQueueStatus().finalized.queue.size());
+  EXPECT_EQ(19ul, fsq.GetQueueStatus().finalized.total_size);  // strlen("one\ntwo\nthree\nfour\n").
+  EXPECT_EQ("finalized-00000000000000100001.bin", fsq.GetQueueStatus().finalized.queue.front().name);
+  EXPECT_EQ("finalized-00000000000000100003.bin", fsq.GetQueueStatus().finalized.queue.back().name);
+
+  // Add another file of the size that would force the oldest one to get purged.
+  mock_wall_time.now = 100010;
+  fsq.PushMessage("very, very, very, very long message");
+  fsq.FinalizeCurrentFile();
+
+  // Confirm the oldest file got deleted.
+  EXPECT_EQ(2u, fsq.GetQueueStatus().finalized.queue.size());
+  EXPECT_EQ(47l, fsq.GetQueueStatus().finalized.total_size);
+  EXPECT_EQ("finalized-00000000000000100003.bin", fsq.GetQueueStatus().finalized.queue.front().name);
+  EXPECT_EQ("finalized-00000000000000100010.bin", fsq.GetQueueStatus().finalized.queue.back().name);
 }
