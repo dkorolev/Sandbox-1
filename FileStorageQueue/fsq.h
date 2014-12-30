@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "status.h"
+#include "exception.h"
 #include "config.h"
 #include "strategies.h"
 
@@ -34,10 +35,6 @@
 #include "../Bricks/time/chrono.h"
 
 namespace fsq {
-
-struct FSQException : std::exception {
-  // TODO(dkorolev): Fill this class.
-};
 
 // On `Success`, FQS deleted file that just got processed and sends the next one to as it arrives,
 // which can happen immediately, if the queue is not empty, or later, once the next file is ready.
