@@ -136,8 +136,8 @@ TEST(FileSystemQueueTest, FinalizedBySize) {
   EXPECT_EQ(0ul, fsq.GetQueueStatus().finalized.total_size);
   EXPECT_EQ(0u, processor.finalized_count);
 
-  // Add another message that would make current file exceed 20 bytes.
-  fsq.PushMessage("now go ahead and process this stuff");
+  // Add another message, under 20 bytes itself, that would make the current file exceed 20 bytes.
+  fsq.PushMessage("process now");
   while (processor.finalized_count != 1) {
     ;  // Spin lock.
   }
@@ -155,7 +155,7 @@ TEST(FileSystemQueueTest, FinalizedBySize) {
 
   EXPECT_EQ(2u, processor.finalized_count);
   EXPECT_EQ("finalized-00000000000000000101.bin|finalized-00000000000000000103.bin", processor.filenames);
-  EXPECT_EQ("this is\na test\nFILE SEPARATOR\nnow go ahead and process this stuff\n", processor.contents);
+  EXPECT_EQ("this is\na test\nFILE SEPARATOR\nprocess now\n", processor.contents);
   EXPECT_EQ(103ull, processor.timestamp);
 }
 
