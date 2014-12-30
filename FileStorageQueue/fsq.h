@@ -66,6 +66,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
   typedef typename T_CONFIG::T_FILE_APPEND_STRATEGY T_FILE_APPEND_STRATEGY;
   typedef typename T_CONFIG::T_FILE_RESUME_STRATEGY T_FILE_RESUME_STRATEGY;
   typedef typename T_CONFIG::T_FILE_NAMING_STRATEGY T_FILE_NAMING_STRATEGY;
+  typedef typename T_CONFIG::T_ERROR_HANDLING_STRATEGY T_ERROR_HANDLING_STRATEGY;
   template <typename FILE_SYSTEM>
   using T_RETRY_STRATEGY = typename T_CONFIG::template T_RETRY_STRATEGY<FILE_SYSTEM>;
   typedef T_RETRY_STRATEGY<typename CONFIG::T_FILE_SYSTEM> T_RETRY_STRATEGY_INSTANCE;
@@ -132,7 +133,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       while (!status_ready_) {
         queue_status_condition_variable_.wait(lock);
         if (force_worker_thread_shutdown_) {
-          throw FSQException();
+          T_ERROR_HANDLING_STRATEGY::HandleError();
         }
       }
     }
@@ -154,7 +155,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
         // Silently ignoring incoming messages while in shutdown mode is the default strategy.
         return;
       } else {
-        throw FSQException();
+        T_ERROR_HANDLING_STRATEGY::HandleError();
       }
     } else {
       const T_TIMESTAMP now = time_manager_.Now();
@@ -170,7 +171,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       }
       EnsureCurrentFileIsOpen(now);
       if (!current_file_ || current_file_->bad()) {
-        throw FSQException();
+        T_ERROR_HANDLING_STRATEGY::HandleError();
       }
       T_FILE_APPEND_STRATEGY::AppendToFile(*current_file_.get(), message);
       status_.appended_file_size += message_size_in_bytes;
@@ -428,7 +429,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
             status_.finalized.queue.pop_front();
           } else {
             // The `front()` part of the queue should only be altered by this worker thread.
-            throw FSQException();
+            T_ERROR_HANDLING_STRATEGY::HandleError();
           }
           if (result == FileProcessingResult::Success) {
             T_FILE_SYSTEM::RemoveFile(next_file->full_path_name);
@@ -440,7 +441,7 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
         } else if (result == FileProcessingResult::FailureNeedRetry) {
           T_RETRY_STRATEGY_INSTANCE::OnFailure();
         } else {
-          throw FSQException();
+          T_ERROR_HANDLING_STRATEGY::HandleError();
         }
       }
     }
