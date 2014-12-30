@@ -1,7 +1,7 @@
 .PHONY: test fulltest all indent clean check coverage
 
 CPLUSPLUS=g++
-CPPFLAGS=-std=c++11 -Wall -W
+CPPFLAGS=-std=c++11 -Wall -W -DALEX_FROM_MINSK_NO_EXCEPTIONS
 LDFLAGS=-pthread
 CPPFLAGS_FOR_COVERAGE=${CPPFLAGS} -O0 -g -fprofile-arcs -ftest-coverage
 LDFLAGS_FOR_COVERAGE=${LDFLAGS}

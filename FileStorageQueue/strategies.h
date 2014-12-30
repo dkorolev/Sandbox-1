@@ -4,6 +4,7 @@
 #include <string>
 
 #include "status.h"
+#include "exception.h"
 
 #include "../Bricks/util/util.h"
 #include "../Bricks/file/file.h"

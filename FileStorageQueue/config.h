@@ -25,8 +25,9 @@ struct Config {
   typedef strategy::JustAppendToFile T_FILE_APPEND_STRATEGY;
   typedef strategy::AlwaysResume T_FILE_RESUME_STRATEGY;
   typedef strategy::DummyFileNamingToUnblockAlexFromMinsk T_FILE_NAMING_STRATEGY;
+  typedef strategy::DefaultErrorHandling T_ERROR_HANDLING_STRATEGY;
   template <typename FILESYSTEM>
-  using T_RETRY_STRATEGY = strategy::ExponentialDelayRetryStrategy<FILESYSTEM>;
+  using T_RETRY_STRATEGY = strategy::ExponentialDelayRetryStrategy<FILESYSTEM, T_ERROR_HANDLING_STRATEGY>;
   typedef bricks::FileSystem T_FILE_SYSTEM;
   typedef strategy::UseEpochMilliseconds T_TIME_MANAGER;
   typedef strategy::KeepFilesAround100KBUnlessNoBacklog T_FINALIZE_STRATEGY;

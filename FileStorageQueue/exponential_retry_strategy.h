@@ -26,10 +26,11 @@ struct StatefulRandSeed {
 // On `Success`, processes files as they arrive without any delays.
 // On `Unavaliable`, retries after an amount of time drawn from an exponential distribution
 // with the mean defaulting to 15 minutes, min defaulting to 1 minute and max defaulting to 24 hours.
-template <typename FILE_SYSTEM_FOR_RETRY_STRATEGY>
+template <typename FILE_SYSTEM_FOR_RETRY_STRATEGY, typename ERROR_HANDLING_STRATEGY = DefaultErrorHandling>
 class ExponentialDelayRetryStrategy {
  public:
   typedef FILE_SYSTEM_FOR_RETRY_STRATEGY T_FILE_SYSTEM;
+  typedef ERROR_HANDLING_STRATEGY T_ERROR_HANDLING_STRATEGY;
   struct DistributionParams {
     double mean, min, max;
     DistributionParams(double mean, double min, double max) : mean(mean), min(min), max(max) {
@@ -60,7 +61,7 @@ class ExponentialDelayRetryStrategy {
       ResumeStateFromFile();
       SaveStateToFile();
     } else {
-      throw FSQException();
+      T_ERROR_HANDLING_STRATEGY::HandleError();  // Empty filename provided.
     }
   }
   // OnSuccess(): Clear all retry delays, cruising at full speed.
