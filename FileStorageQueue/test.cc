@@ -22,6 +22,8 @@ struct TestOutputFilesProcessor {
   fsq::FileProcessingResult OnFileReady(const fsq::FileInfo<uint64_t>& file_info, uint64_t now) {
     if (mimic_unavailable_) {
       return fsq::FileProcessingResult::Unavailable;
+    } else if (mimic_need_retry_) {
+      return fsq::FileProcessingResult::FailureNeedRetry;
     } else {
       if (!finalized_count) {
         contents = bricks::ReadFileAsString(file_info.full_path_name);
@@ -47,12 +49,17 @@ struct TestOutputFilesProcessor {
     mimic_unavailable_ = mimic_unavailable;
   }
 
+  void SetMimicNeedRetry(bool mimic_need_retry = true) {
+    mimic_need_retry_ = mimic_need_retry;
+  }
+
   atomic_size_t finalized_count;
   string filenames = "";
   string contents = "";
   uint64_t timestamp = 0;
 
   bool mimic_unavailable_ = false;
+  bool mimic_need_retry_ = false;
 };
 
 struct MockTime {
@@ -409,4 +416,123 @@ TEST(FileSystemQueueTest, PurgesByTotalSize) {
   EXPECT_EQ(47l, fsq.GetQueueStatus().finalized.total_size);
   EXPECT_EQ("finalized-00000000000000100003.bin", fsq.GetQueueStatus().finalized.queue.front().name);
   EXPECT_EQ("finalized-00000000000000100010.bin", fsq.GetQueueStatus().finalized.queue.back().name);
+}
+
+// Persists retry delay to the file.
+TEST(FileSystemQueueTest, SavesRetryDelayToFile) {
+  const std::string state_file_name = std::move(bricks::FileSystem::JoinPath(kTestDir, "state"));
+
+  CleanupOldFiles();
+  bricks::RemoveFile(state_file_name, bricks::RemoveFileParameters::Silent);
+
+  const uint64_t t1 = static_cast<uint64_t>(bricks::time::Now());
+
+  TestOutputFilesProcessor processor;
+  MockTime mock_wall_time;
+  typedef fsq::strategy::ExponentialDelayRetryStrategy<bricks::FileSystem> ExpRetry;
+  // Wait between 1 second and 2 seconds before retrying.
+  FSQ fsq(processor,
+          kTestDir,
+          mock_wall_time,
+          bricks::FileSystem(),
+          ExpRetry(bricks::FileSystem(), ExpRetry::DistributionParams(1500, 1000, 2000)));
+
+  // Attach to file, this will force the creation of the file.
+  fsq.AttachToFile(state_file_name);
+
+  const uint64_t t2 = static_cast<uint64_t>(bricks::time::Now());
+
+  // At start, with no file to resume, update time should be equal to next processing ready time,
+  // and they should both be between `t1` and `t2` retrieved above.
+  std::string contents1 = bricks::ReadFileAsString(state_file_name);
+  ASSERT_EQ(contents1.length(), 41);  // 20 + 1 + 20.
+  std::istringstream is1(contents1);
+  uint64_t a1, b1;
+  is1 >> a1 >> b1;
+  EXPECT_GE(a1, t1);
+  EXPECT_LE(a1, t2);
+  EXPECT_GE(b1, t1);
+  EXPECT_LE(b1, t2);
+  EXPECT_EQ(a1, b1);
+
+  // Now, after one failure, update time whould be between `t4` and `t4`,
+  // and next processing time should be between one and two seconds into the future.
+  const uint64_t t3 = static_cast<uint64_t>(bricks::time::Now());
+  fsq.PushMessage("blah");
+  processor.SetMimicNeedRetry();
+  fsq.ForceProcessing();
+  const uint64_t t4 = static_cast<uint64_t>(bricks::time::Now());
+
+  // Give FSQ some time to apply retry policy and to update the state file.
+  const uint64_t SAFETY_INTERVAL = 50;  // Wait for 50ms to ensure the file is updated.
+  // TODO(dkorolev): This makes the test flaky, but should be fine for Alex to go ahead and push it.
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(SAFETY_INTERVAL));
+
+  std::string contents2 = bricks::ReadFileAsString(state_file_name);
+  ASSERT_EQ(contents2.length(), 41);  // 20 + 1 + 20.
+  std::istringstream is2(contents2);
+  uint64_t a2, b2;
+  is2 >> a2 >> b2;
+  EXPECT_GE(a2, t3);
+  EXPECT_LE(a2, t4 + SAFETY_INTERVAL);
+  EXPECT_GE(b2, a2 + 1000);
+  EXPECT_LE(b2, a2 + 2000);
+}
+
+// Reads retry delay from file.
+TEST(FileSystemQueueTest, ReadsRetryDelayFromFile) {
+  const std::string state_file_name = std::move(bricks::FileSystem::JoinPath(kTestDir, "state"));
+
+  CleanupOldFiles();
+
+  // Legitimately configure FSQ to wait for 5 seconds from now before further processing takes place.
+  const uint64_t t1 = static_cast<uint64_t>(bricks::time::Now());
+  using bricks::strings::PackToString;
+  bricks::WriteStringToFile(state_file_name.c_str(), PackToString(t1) + ' ' + PackToString(t1 + 5000));
+
+  TestOutputFilesProcessor processor;
+  MockTime mock_wall_time;
+  typedef fsq::strategy::ExponentialDelayRetryStrategy<bricks::FileSystem> ExpRetry;
+  FSQ fsq(processor,
+          kTestDir,
+          mock_wall_time,
+          bricks::FileSystem(),
+          ExpRetry(bricks::FileSystem(), ExpRetry::DistributionParams(1500, 1000, 2000)));
+  fsq.AttachToFile(state_file_name);
+
+  const uint64_t t2 = static_cast<uint64_t>(bricks::time::Now());
+
+  // Should wait for 5 more seconds, perhaps without a few milliseconds it took to read the file, etc.
+  bricks::time::MILLISECONDS_INTERVAL d;
+  ASSERT_TRUE(fsq.ShouldWait(&d));
+  EXPECT_GE(t2, t1);
+  EXPECT_LE(t2 - t1, 50);
+  EXPECT_GE(static_cast<uint64_t>(d), 4950);
+  EXPECT_LE(static_cast<uint64_t>(d), 5000);
+}
+
+// Ignored retry delay if it was set from the future.
+TEST(FileSystemQueueTest, IgnoredRetryDelaySetFromTheFuture) {
+  const std::string state_file_name = std::move(bricks::FileSystem::JoinPath(kTestDir, "state"));
+
+  CleanupOldFiles();
+
+  // Incorrectly configure FSQ to start 5 seconds from now, set at 0.5 seconds into the future.
+  const uint64_t t = static_cast<uint64_t>(bricks::time::Now());
+  using bricks::strings::PackToString;
+  bricks::WriteStringToFile(state_file_name.c_str(), PackToString(t + 500) + ' ' + PackToString(t + 5000));
+
+  TestOutputFilesProcessor processor;
+  MockTime mock_wall_time;
+  typedef fsq::strategy::ExponentialDelayRetryStrategy<bricks::FileSystem> ExpRetry;
+  FSQ fsq(processor,
+          kTestDir,
+          mock_wall_time,
+          bricks::FileSystem(),
+          ExpRetry(bricks::FileSystem(), ExpRetry::DistributionParams(1500, 1000, 2000)));
+  fsq.AttachToFile(state_file_name);
+
+  bricks::time::MILLISECONDS_INTERVAL interval;
+  ASSERT_FALSE(fsq.ShouldWait(&interval));
 }

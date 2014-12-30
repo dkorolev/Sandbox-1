@@ -52,7 +52,7 @@ class ExponentialDelayRetryStrategy {
                                          const double max = 24 * 60 * 60 * 1e3)
       : ExponentialDelayRetryStrategy(file_system, DistributionParams(mean, min, max)) {
   }
-  void AttachToFile(const std::string filename) {
+  void AttachToFile(const std::string& filename) {
     if (!filename.empty()) {
       persistence_filename_ = filename;
       // First, resume delay, is possible.
@@ -102,10 +102,10 @@ class ExponentialDelayRetryStrategy {
     try {
       const std::string contents = std::move(file_system_.ReadFileAsString(persistence_filename_));
       constexpr size_t w = bricks::strings::FixedSizeSerializer<EPOCH_MILLISECONDS>::size_in_bytes;
-      // File format is "${update_time}:${time_to_be_ready_to_process}".
-      if (contents.length() == w * 2 + 1) {
-        const EPOCH_MILLISECONDS last_update_time;
-        const EPOCH_MILLISECONDS time_to_be_ready_to_process;
+      // File format is "${update_time} ${time_to_be_ready_to_process}".
+      if (contents.length() == w * 2 + 1 && contents[w] == ' ') {
+        EPOCH_MILLISECONDS last_update_time;
+        EPOCH_MILLISECONDS time_to_be_ready_to_process;
         bricks::strings::UnpackFromString(contents.substr(0, w), last_update_time);
         bricks::strings::UnpackFromString(contents.substr(w + 1, w), time_to_be_ready_to_process);
         if (last_update_time <= now) {
@@ -127,7 +127,7 @@ class ExponentialDelayRetryStrategy {
     try {
       file_system_.WriteStringToFile(
           persistence_filename_.c_str(),
-          PackToString(last_update_time_) + ':' + PackToString(time_to_be_ready_to_process_));
+          PackToString(last_update_time_) + ' ' + PackToString(time_to_be_ready_to_process_));
     } catch (const bricks::FileException&) {
       // TODO(dkorolev): Log an error message, could not read the file.
     }
