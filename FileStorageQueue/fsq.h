@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "status.h"
+#include "exception.h"
 #include "config.h"
 #include "strategies.h"
 
@@ -34,10 +35,6 @@
 #include "../Bricks/time/chrono.h"
 
 namespace fsq {
-
-struct FSQException : std::exception {
-  // TODO(dkorolev): Fill this class.
-};
 
 // On `Success`, FQS deleted file that just got processed and sends the next one to as it arrives,
 // which can happen immediately, if the queue is not empty, or later, once the next file is ready.
@@ -418,6 +415,11 @@ class FSQ final : public CONFIG::T_FILE_NAMING_STRATEGY,
       // Process the file, if available.
       if (next_file) {
         const FileProcessingResult result = processor_.OnFileReady(*next_file.get(), time_manager_.Now());
+        // Important to clear force_processing_, in a locked way.
+        {
+          std::unique_lock<std::mutex> lock(status_mutex_);
+          force_processing_ = false;
+        }
         if (result == FileProcessingResult::Success || result == FileProcessingResult::SuccessAndMoved) {
           std::unique_lock<std::mutex> lock(status_mutex_);
           processing_suspended_ = false;

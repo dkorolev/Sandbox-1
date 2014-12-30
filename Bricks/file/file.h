@@ -105,7 +105,15 @@ class ScopedRemoveFile final {
 struct FileSystem {
   typedef std::ofstream OutputFile;
 
-  static std::string JoinPath(const std::string& path_name, const std::string& base_name) {
+  static inline std::string ReadFileAsString(std::string const& file_name) {
+    return bricks::ReadFileAsString(file_name);
+  }
+
+  static inline void WriteStringToFile(const std::string& file_name, const std::string& contents, bool append = false) {
+    bricks::WriteStringToFile(file_name, contents, append);
+  }
+
+  static inline std::string JoinPath(const std::string& path_name, const std::string& base_name) {
     if (path_name.empty()) {
       return base_name;
     } else if (path_name.back() == '/') {
@@ -115,18 +123,18 @@ struct FileSystem {
     }
   }
 
-  static void RenameFile(const std::string& old_name, const std::string& new_name) {
+  static inline void RenameFile(const std::string& old_name, const std::string& new_name) {
     if (::rename(old_name.c_str(), new_name.c_str())) {
       // TODO(dkorolev): Throw an exception and analyze errno.
     }
   }
 
-  static void RemoveFile(const std::string& file_name,
+  static inline void RemoveFile(const std::string& file_name,
                          RemoveFileParameters parameters = RemoveFileParameters::ThrowExceptionOnError) {
     bricks::RemoveFile(file_name, parameters);
   }
 
-  static void ScanDirUntil(const std::string& directory, std::function<bool(const std::string&)> lambda) {
+  static inline void ScanDirUntil(const std::string& directory, std::function<bool(const std::string&)> lambda) {
     DIR* dir = ::opendir(directory.c_str());
     const auto closedir_guard = MakeScopeGuard([dir]() { ::closedir(dir); });
     if (dir) {
@@ -140,14 +148,14 @@ struct FileSystem {
     }
   }
 
-  static void ScanDir(const std::string& directory, std::function<void(const std::string&)> lambda) {
+  static inline void ScanDir(const std::string& directory, std::function<void(const std::string&)> lambda) {
     ScanDirUntil(directory, [lambda](const std::string& filename) {
       lambda(filename);
       return true;
     });
   }
 
-  static uint64_t GetFileSize(const std::string& file_name) {
+  static inline uint64_t GetFileSize(const std::string& file_name) {
     struct stat info;
     if (stat(file_name.c_str(), &info)) {
       // TODO(dkorolev): Throw an exception and analyze errno.
@@ -157,7 +165,7 @@ struct FileSystem {
     }
   }
 
-  static void CreateDirectory(const std::string& directory) {
+  static inline void CreateDirectory(const std::string& directory) {
     // Hard-code default permissions to avoid cross-platform compatibility issues.
     ::mkdir(directory.c_str(), 0755);
   }
